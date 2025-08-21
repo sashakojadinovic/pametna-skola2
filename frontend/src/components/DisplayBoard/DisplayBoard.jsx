@@ -83,7 +83,7 @@ export default function DisplayBoard() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Card sx={{ maxWidth: 960, mx: "auto", textAlign: "center", p: 2 }}>
+      <Card sx={{ mx: "auto", textAlign: "center", p: 2 }}>
         <CardContent>
           <Typography variant="h3" gutterBottom>Огласна табла</Typography>
 

@@ -31,7 +31,7 @@ export default function TemplateSelect({ value, onChange, label = "Шаблон"
     () => templates.find((t) => t.id === value) || null,
     [templates, value]
   );
-
+  console.log(templates);
   return (
     <Autocomplete
       options={templates}

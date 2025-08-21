@@ -55,7 +55,7 @@ export default function RingRow({ value, onChange, onDelete, error }) {
       />
 
       <Tooltip title="Обриши звоно">
-        <IconButton color="error" onClick={onDelete}>
+        <IconButton  onClick={onDelete}>
           <DeleteIcon />
         </IconButton>
       </Tooltip>

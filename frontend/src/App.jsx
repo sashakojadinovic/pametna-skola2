@@ -20,7 +20,7 @@ export default function App() {
             <Button color="inherit" component={Link} to="/admin">Админ</Button>
           </Toolbar>
         </AppBar>
-        <Container maxWidth="lg" sx={{ py: 3 }}>
+        <Container maxWidth="xl" sx={{ py: 3 }}>
           <Routes>
             <Route path="/" element={<MonitorPage />} />
             <Route path="/admin" element={<AdminPage />} />

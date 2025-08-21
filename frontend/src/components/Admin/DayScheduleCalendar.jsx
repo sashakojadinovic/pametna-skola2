@@ -231,8 +231,7 @@ export default function DayScheduleCalendar() {
                   }}
                 />
 
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
-                  <Chip size="small" color="error" label="Нерадни дан" />
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>                 
                   <Chip size="small" variant="outlined" label="Боја тачке = шаблон" />
                 </Stack>
               </CardContent>
@@ -260,7 +259,7 @@ export default function DayScheduleCalendar() {
                     <span>
                       <Button
                         variant="contained"
-                        disabled={selected.size === 0 || !bulkTemplateId}
+                        disabled={selected.size === 0 }
                         onClick={applyBulkTemplate}
                         fullWidth
                       >
@@ -268,16 +267,6 @@ export default function DayScheduleCalendar() {
                       </Button>
                     </span>
                   </Tooltip>
-
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    disabled={selected.size === 0}
-                    onClick={applyBulkHoliday}
-                    fullWidth
-                  >
-                    Нерадни ({selected.size})
-                  </Button>
 
                   <Button onClick={clearBulk} disabled={selected.size === 0} fullWidth>
                     Очисти избор
@@ -298,10 +287,6 @@ export default function DayScheduleCalendar() {
         <DialogContent dividers>
           <Stack spacing={2}>
             <TemplateSelect value={editTemplateId} onChange={setEditTemplateId} label="Шаблон звона" fullWidth />
-            <FormControlLabel
-              control={<Checkbox checked={editHoliday} onChange={(e) => setEditHoliday(e.target.checked)} />}
-              label="Нерадни дан"
-            />
             <textarea
               placeholder="Напомена (опционо)"
               value={editNote}
