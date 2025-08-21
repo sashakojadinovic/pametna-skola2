@@ -1,0 +1,28 @@
+/src
+  /app.ts                 // bootstrap (Express + Socket.IO + Bree)
+  /config/index.ts        // env + defaults (relay pin, tz...)
+  /db                     // sqlite init, migracije (drizzle/knex)
+  /modules
+    /bell
+      bell.service.ts     // planiranje, sledeći trigger, test-fire
+      bell.scheduler.ts   // Bree job definicija
+      bell.gpio.ts        // relej kontrola
+      bell.controller.ts  // REST
+      bell.types.ts
+    /monitor
+      monitor.service.ts  // state + emitovanje
+      monitor.controller.ts
+    /playlist
+      player.process.ts   // mpv/vlc kontrola (spawn + IPC)
+      playlist.service.ts // poslovna logika (odmor prozori)
+      playlist.controller.ts
+    /announcements
+      announcements.service.ts
+      announcements.controller.ts
+    /auth (opciono)
+  /realtime
+    ws.ts                 // Socket.IO setup, rooms
+  /utils
+    time.ts               // luxon helpers
+    logger.ts             // pino
+  /routes.ts              // registracija kontrolera

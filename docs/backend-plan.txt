@@ -1,0 +1,284 @@
+1) Tehnički stubovi
+
+Runtime: Node.js (LTS).
+
+Baza: SQLite (file‑based, backup jednostavan).
+
+HTTP: Express (ili Nest ako želiš strožiju strukturu; u nastavku ću pisati kao da je Express).
+
+Scheduler: bree (worker_threads, restart‑safe).
+
+Vreme/kalendari: luxon (+ rrule za ponavljanja, zona Europe/Belgrade).
+
+GPIO (relej): onoff ili pigpio (preciznije vreme → pigpio).
+
+Audio player: mpv ili vlc kontrolisani preko child_process (mpv ima čist JSON IPC, što olakšava play/pause/queue).
+
+Realtime: Socket.IO za ogласни монитор (countdown, obaveštenja, override ekrana).
+
+Konfiguracija: dotenv + validacija (npr. zod).
+
+Logovanje: pino (+ rotacija preko systemd journala).
+
+2) Domen i entiteti (MVP)
+Zvono / Raspored
+
+BellTemplate: predefinisani šabloni zvonjenja
+
+id, name, description, json_spec (niz termina sa vremenima i trajanjem), created_at, updated_at
+
+DaySchedule: kalendar dodela šablona po danima
+
+id, date (YYYY‑MM‑DD), bell_template_id, is_holiday (bool), note
+
+BellLog: audit okidanja releja
+
+id, ts, action (OPEN/CLOSE), duration_ms, result (OK/FAIL), message
+
+Oglasni monitor
+
+Announcement: tekstualna obaveštenja
+
+id, title, body, priority (LOW/NORMAL/HIGH), start_ts, end_ts, is_active
+
+Slide (opciono): slika/video za prikaz
+
+id, file_path, start_ts, end_ts, is_active, duration_s
+
+PushOverride: trenutno forsirano stanje ekrana (npr. “Vanredna objava”)
+
+id, created_ts, payload_json, expires_ts
+
+Plejliste / Audio
+
+Playlist: kolekcija pesama za odmor
+
+id, name, mode (SEQUENTIAL/SHUFFLE), crossfade_s (0 za OFF)
+
+Track: putanja i metapodaci
+
+id, playlist_id, file_path, title, artist, duration_s, order_index
+
+NowPlayingLog: istoriski zapisi reprodukcije
+
+id, ts, track_id, action (START/STOP/SKIP)
+
+Sistem / Admin
+
+Settings: key/value za globalne opcije
+
+key (PK), value_json
+
+User (ako želiš login):
+
+id, username, password_hash, role (ADMIN/VIEWER), last_login_ts
+
+3) Funkcionalni tokovi (visok nivo)
+A) Scheduler zvona
+
+Na bootstrapu servera: učitati današnji DaySchedule → izračunati sve slote (po json_spec).
+
+Bree job (BellRunner) drži naredni okidač (UTC+offset prema zoni; DST safe).
+
+U trenutku okidanja:
+
+Zaustaviti muziku (ako svira).
+
+Aktivirati relej (GPIO HIGH/LOW) npr. 2–3 s (konfigurisano).
+
+Logovati ishod u BellLog.
+
+Emitovati Socket.IO event: bell:triggered (klijenti osvežavaju countdown).
+
+Nakon okidanja, reprogramirati sledeći termin iz liste.
+
+Promena rasporeda u toku dana → rehidracija jobova.
+
+B) Oglasni monitor (klijent u browseru)
+
+Frontend se kači na Socket.IO room “monitor”.
+
+Backend emituje:
+
+monitor:countdown (svakih X sekundi ili samo na promenu sledećeg zvona)
+
+monitor:announcement (novi/izmenjeni aktivni anouncement)
+
+monitor:override (prisilni prikaz, npr. slika preko celog ekrana)
+
+REST API daje i “snapshot” stanja da klijent ima početno punjenje.
+
+C) Plejlista
+
+“Prozor za odmor” se računa iz šeme zvonjenja: između kraj časa i početak sledećeg.
+
+Kad uđemo u odmor → pokreni plejlistu (po režimu), na N‑2 s do sledećeg zvona → fade‑out/stop.
+
+Ručno START/STOP/Skip kroz admin panel (REST + Socket.IO command).
+
+Čuvati NowPlayingLog.
+
+D) Prioriteti
+
+Prioritet: Zvono > Override > Plejlista > Regular announcements/slides.
+
+Ako stigne override, pauziraj playlistu dok traje.
+
+4) API rute (skica)
+
+/api/health
+
+GET / → status, sledeće zvono, RTC sinhronizacija, uptime.
+
+/api/bell-templates
+
+GET / list; POST / kreiranje; GET /:id; PUT /:id; DELETE /:id (meko brisanje po želji).
+
+/api/day-schedule
+
+GET /?from=YYYY-MM-DD&to=YYYY-MM-DD
+
+PUT /:date body: { bell_template_id | is_holiday | note } → rehidrira scheduler po potrebi.
+
+/api/bell
+
+POST /test-fire body: { duration_ms? } → ručno okidanje (auditirano).
+
+GET /next → timestamp i meta sledećeg zvona.
+
+/api/announcements
+
+CRUD + POST /push (trenutni override: { type: "text"|"image", payload, ttl_s }).
+
+/api/playlists
+
+CRUD plejliste i trake (/api/playlists/:id/tracks).
+
+Kontrole reprodukcije:
+
+POST /play { playlist_id }
+
+POST /pause
+
+POST /stop
+
+POST /skip
+
+GET /now-playing
+
+/api/settings
+
+GET / i PUT / – npr. { relay_pin, relay_pulse_ms, school_start_time, timezone, monitor_refresh_s }.
+
+/api/auth
+
+(opciono) POST /login, POST /logout, GET /me.
+
+5) WebSocket događaji (kanon)
+
+bell:triggered { ts, duration_ms }
+
+monitor:countdown { nextBellTs, lessonNumber, remainingMs }
+
+monitor:announcement { id, title, body, priority }
+
+monitor:override { type, payload, expiresTs }
+
+playlist:now { trackId, title, artist, position_s }
+
+playlist:state { status: "PLAYING"|"PAUSED"|"STOPPED" }
+
+6) Struktura projekta
+/src
+  /app.ts                 // bootstrap (Express + Socket.IO + Bree)
+  /config/index.ts        // env + defaults (relay pin, tz...)
+  /db                     // sqlite init, migracije (drizzle/knex)
+  /modules
+    /bell
+      bell.service.ts     // planiranje, sledeći trigger, test-fire
+      bell.scheduler.ts   // Bree job definicija
+      bell.gpio.ts        // relej kontrola
+      bell.controller.ts  // REST
+      bell.types.ts
+    /monitor
+      monitor.service.ts  // state + emitovanje
+      monitor.controller.ts
+    /playlist
+      player.process.ts   // mpv/vlc kontrola (spawn + IPC)
+      playlist.service.ts // poslovna logika (odmor prozori)
+      playlist.controller.ts
+    /announcements
+      announcements.service.ts
+      announcements.controller.ts
+    /auth (opciono)
+  /realtime
+    ws.ts                 // Socket.IO setup, rooms
+  /utils
+    time.ts               // luxon helpers
+    logger.ts             // pino
+  /routes.ts              // registracija kontrolera
+
+
+Ako želiš bez TypeScript-a, imena fajlova .js i izbacujemo tipove — struktura ostaje ista.
+
+7) Migracije (ključna polja – MVP)
+
+bell_templates(id, name, description, json_spec, created_at, updated_at)
+
+day_schedule(id, date UNIQUE, bell_template_id FK, is_holiday INT, note)
+
+bell_log(id, ts, action, duration_ms, result, message)
+
+announcements(id, title, body, priority, start_ts, end_ts, is_active)
+
+slides(id, file_path, start_ts, end_ts, is_active, duration_s)
+
+push_override(id, created_ts, payload_json, expires_ts)
+
+playlists(id, name, mode, crossfade_s)
+
+tracks(id, playlist_id FK, file_path, title, artist, duration_s, order_index)
+
+now_playing_log(id, ts, track_id FK, action)
+
+settings(key PK, value_json)
+
+users (opciono) (id, username UNIQUE, password_hash, role, last_login_ts)
+
+8) Bezbednost i pouzdanost
+
+systemd: Restart=always, Environment=..., After=network-online.target, Wants=time-sync.target.
+
+Health-check proverava: vremenik sledećeg zvona, status GPIO drajvera, da li mpv proces živi.
+
+RTC/UPS HAT (preporuka): stabilno vreme i uredno gašenje.
+
+Fail‑safe: ako SQLite ne radi, ne okidati relej; oglasni monitor dobija crvenu status‑traku “servis van funkcije”.
+
+9) Šta tačno ulazi u prvi sprint (MVP)
+
+Baza + migracije.
+
+CRUD za BellTemplate i DaySchedule.
+
+Scheduler koji iz šablona računa slotove i okida GPIO (test-fire uključeno).
+
+Socket.IO: monitor:countdown i bell:triggered.
+
+CRUD Playlist/Track, player START/STOP/Skip (bez crossfade‑a za početak).
+
+Announcements CRUD + emit na monitor (bez “slides” u MVP).
+
+Health endpoint.
+
+Ako si saglasan sa ovim planom, sledeći korak je da zaključamo:
+
+alatke (bree vs node‑cron; onoff vs pigpio; mpv vs vlc),
+
+formate json_spec za šablon zvona i “lesson numbering”,
+
+naziv(e) Socket.IO događaja (da ih frontend odmah implementira).
+
+Reci ako nešto želiš da izmenimo/pojednostavimo, pa zaključavamo specifikacije i prelazimo na pisanje koda.
+
+ChatGPT can make mistakes. Check important info.
