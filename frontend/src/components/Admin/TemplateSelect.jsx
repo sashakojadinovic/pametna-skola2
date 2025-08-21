@@ -1,81 +1,68 @@
 /**
  * File: TemplateSelect.jsx
- * Path: /src/components/Admin/TemplateSelect.jsx
+ * Path: /frontend/src/components/Admin
  * Author: Saša Kojadinović
  */
 
-import { useEffect, useState } from "react";
-import {
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  ListItemIcon,
-  ListItemText,
-} from "@mui/material";
-import api from "../../api/axiosInstance";
+import { useEffect, useMemo, useState } from "react";
+import { Autocomplete, TextField, CircularProgress, Box } from "@mui/material";
+import bellApi from "../../api/bellApi";
+import ColorDot from "./ColorDot";
 
-/**
- * Селект за избор шаблона звона.
- * Приказује малу „swatch“ куглицу у боји шаблона (t.color).
- */
-export default function TemplateSelect({
-  value,
-  onChange,
-  label = "Шаблон звона",
-  fullWidth = true,
-  allowEmpty = true,
-}) {
-  const [items, setItems] = useState([]);
+export default function TemplateSelect({ value, onChange, label = "Шаблон" }) {
+  const [loading, setLoading] = useState(true);
+  const [templates, setTemplates] = useState([]);
 
   useEffect(() => {
+    let mounted = true;
     (async () => {
+      setLoading(true);
       try {
-        const { data } = await api.get("/bell-templates");
-        setItems(Array.isArray(data) ? data : []);
-      } catch {
-        setItems([]);
+        const data = await bellApi.getTemplates();
+        if (mounted) setTemplates(Array.isArray(data) ? data : []);
+      } finally {
+        if (mounted) setLoading(false);
       }
     })();
+    return () => { mounted = false; };
   }, []);
 
+  const selected = useMemo(
+    () => templates.find((t) => t.id === value) || null,
+    [templates, value]
+  );
+
   return (
-    <FormControl fullWidth={fullWidth} size="small">
-      <InputLabel>{label}</InputLabel>
-      <Select
-        label={label}
-        value={value ?? ""}
-        onChange={(e) => onChange?.(e.target.value || null)}
-        displayEmpty
-      >
-        {allowEmpty && (
-          <MenuItem value="">
-            <em>— Без шаблона —</em>
-          </MenuItem>
-        )}
-        {items.map((t) => (
-          <MenuItem key={t.id} value={t.id}>
-            <ListItemIcon sx={{ minWidth: 28 }}>
-              <span
-                style={{
-                  display: "inline-block",
-                  width: 14,
-                  height: 14,
-                  borderRadius: 3,
-                  backgroundColor: t.color || "#1976d2",
-                  border: "1px solid rgba(0,0,0,0.2)",
-                }}
-              />
-            </ListItemIcon>
-            <ListItemText
-              primary={t.name}
-              secondary={t.description || ""}
-              primaryTypographyProps={{ fontSize: 14 }}
-              secondaryTypographyProps={{ fontSize: 12 }}
-            />
-          </MenuItem>
-        ))}
-      </Select>
-    </FormControl>
+    <Autocomplete
+      options={templates}
+      getOptionLabel={(o) => o?.name || ""}
+      value={selected}
+      onChange={(_, opt) => onChange?.(opt ? opt.id : null)}
+      loading={loading}
+      renderInput={(params) => (
+        <TextField
+        variant="standard"
+        sx={{mb:1}}
+          {...params}
+          label={label}
+          InputProps={{
+            ...params.InputProps,
+            endAdornment: (
+              <>
+                {loading ? <CircularProgress size={18} /> : null}
+                {params.InputProps.endAdornment}
+              </>
+            ),
+          }}
+        />
+      )}
+      renderOption={(props, option) => (
+        <Box component="li" {...props}>
+          <ColorDot color={option.color || "#1976d2"} />
+          {option.name}
+        </Box>
+      )}
+      isOptionEqualToValue={(a, b) => a?.id === b?.id}
+    />
   );
 }

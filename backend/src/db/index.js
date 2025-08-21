@@ -20,15 +20,16 @@ export async function initDb() {
 
   const db = await open({ filename: config.dbFile, driver: sqlite3.Database });
   await db.exec('PRAGMA foreign_keys = ON;');
-  const migrationSql = fs.readFileSync(path.join(__dirname, 'migrations', 'initial.sql'), 'utf8');
-  await db.exec(migrationSql);
 
-  // ⬇️ Ensure bell_templates.color exists (safe for existing DBs)
-  const cols = await db.all(`PRAGMA table_info(bell_templates)`);
-  const hasColor = cols.some(c => c.name === 'color');
-  if (!hasColor) {
-    await db.exec(`ALTER TABLE bell_templates ADD COLUMN color TEXT DEFAULT '#1976d2';`);
-    logger.info('Added bell_templates.color column');
+  // 🔽 učitaj sve .sql fajlove po abecedi (initial.sql + naknadne)
+  const migrationsDir = path.join(__dirname, 'migrations');
+  const files = fs.readdirSync(migrationsDir)
+    .filter(f => f.endsWith('.sql'))
+    .sort();
+
+  for (const f of files) {
+    const sql = fs.readFileSync(path.join(migrationsDir, f), 'utf8');
+    await db.exec(sql);
   }
 
   logger.info('SQLite initialized and migrated.');

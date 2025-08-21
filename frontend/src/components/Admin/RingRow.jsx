@@ -47,6 +47,7 @@ export default function RingRow({ value, onChange, onDelete, error }) {
       />
 
       <TextField
+       sx={{bottom:'11px'}}
         label="Ознака (опционо)"
         value={label}
         onChange={(e) => onChange?.({ ...value, label: e.target.value })}

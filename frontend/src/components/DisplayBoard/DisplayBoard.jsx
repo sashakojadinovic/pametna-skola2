@@ -144,7 +144,7 @@ export default function DisplayBoard() {
                 </Typography>
               )}
               <Typography variant="h3" sx={{ fontWeight: 700 }}>
-                {nextTs ? formatHMS(countdownMs) : "Нема више звона"}
+                {nextTs ? formatHMS(countdownMs) : "Нема планираних звона"}
               </Typography>
               {/* Мини распоред данас */}
               <MiniSchedule

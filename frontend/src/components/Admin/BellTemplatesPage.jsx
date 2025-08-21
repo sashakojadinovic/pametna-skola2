@@ -28,6 +28,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import bellApi from "../../api/bellApi";
 import BellTemplateDialog from "./BellTemplateDialog";
+import ColorDot from "./ColorDot";
 
 function parseSpec(json_spec) {
   try {
@@ -50,7 +51,7 @@ export default function BellTemplatesPage() {
     try {
       const data = await bellApi.getTemplates();
       setRows(Array.isArray(data) ? data : []);
-    } catch (e) {
+    } catch {
       setToast({ open: true, message: "Грешка при учитавању.", severity: "error" });
     } finally {
       setLoading(false);
@@ -68,6 +69,7 @@ export default function BellTemplatesPage() {
         id: r.id,
         name: r.name,
         description: r.description || "",
+        color: r.color || "#1976d2",
         ringsCount: rings.length,
         updated_at: r.updated_at ? new Date(r.updated_at).toLocaleString("sr-RS") : "—",
         raw: r,
@@ -91,7 +93,7 @@ export default function BellTemplatesPage() {
       await bellApi.deleteTemplate(row.id);
       setToast({ open: true, message: "Шаблон је обрисан.", severity: "success" });
       load();
-    } catch (e) {
+    } catch {
       setToast({ open: true, message: "Брисање није успело.", severity: "error" });
     }
   };
@@ -125,7 +127,13 @@ export default function BellTemplatesPage() {
               <TableBody>
                 {table.map((r) => (
                   <TableRow key={r.id} hover>
-                    <TableCell>{r.name}</TableCell>
+                    <TableCell>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        {/* kvadratić boje ispred naziva */}
+                        <ColorDot color={r.color} size={14} style={{ borderRadius: 4 }} />
+                        <span>{r.name}</span>
+                      </Stack>
+                    </TableCell>
                     <TableCell>{r.description}</TableCell>
                     <TableCell align="right">{r.ringsCount}</TableCell>
                     <TableCell>{r.updated_at}</TableCell>
