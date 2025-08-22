@@ -41,7 +41,7 @@ export default function DisplayBoard() {
     audio.volume = 1.0;
     audioRef.current = audio;
 
-    // тихи warmup
+    // warmup
     const warm = new Audio(alertSound);
     warm.volume = 0;
     warm.play()
@@ -225,9 +225,9 @@ export default function DisplayBoard() {
                   label={current?.type || "Ван распореда"}
                   color={current?.type === "ЧАС" ? "primary" : "default"}
                 />
-                {current?.type === "ЧАС" && (
-                  <Chip label={`${current?.periodNo ?? "?"}. ЧАС `} color="secondary" />
-                )}
+               {/*  {current?.type === "ЧАС" && (
+                  <Chip label={`${current?.periodNo ?? "?"}. ЧАС `} color="success" />
+                )} */}
               </Stack>
 
               {/* Преостало у текућем интервалу + progress bar */}

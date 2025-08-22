@@ -40,7 +40,7 @@ export default function CarouselAnnouncementBoard({ items = [], override = null 
         setIndex((i) => (i + 1) % items.length);
         setFadeIn(true);
       }, 400);
-    }, 15000);
+    }, 55000);
 
     return () => clearInterval(interval);
   }, [items, override]);
@@ -83,7 +83,7 @@ export default function CarouselAnnouncementBoard({ items = [], override = null 
                 </Typography>
                 {visibleItem.body && (
                   <Typography
-                    variant="body2"
+                    variant="p"
                     component="div"
                     dangerouslySetInnerHTML={{
                       __html: DOMPurify.sanitize(visibleItem.body),

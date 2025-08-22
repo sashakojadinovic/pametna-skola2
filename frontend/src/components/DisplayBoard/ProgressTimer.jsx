@@ -33,10 +33,10 @@ export default function ProgressTimer({ startTs, endTs, now, label }) {
       <Typography variant="h6" sx={{ mb: 0.5 }}>
         {label}
       </Typography>
-      <Typography variant="h3" sx={{ fontWeight: 800, mb: 1 }}>
+      <Typography variant="h1" sx={{ fontWeight: 800, mb: 1 }}>
         {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
       </Typography>
-      <LinearProgress color="secondary" variant="determinate" value={value} sx={{ height: 10, borderRadius: 2 }} />
+      <LinearProgress color="success" variant="determinate" value={value} sx={{ height: 10, borderRadius: 2 }} />
     </Box>
   );
 }

@@ -7,6 +7,7 @@ import { createTheme } from '@mui/material/styles';
 
 const theme = createTheme({
   palette: {
+    mode: "light",
     // ✅ redefinisana primary paleta
     primary: {
       main: '#36383a',      // tamno siva
