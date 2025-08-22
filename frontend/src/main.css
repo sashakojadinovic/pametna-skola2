@@ -1,3 +1,15 @@
 body {
     background-color: #efefef !important;
 }
+
+.MuiTableHead-root {
+    background-color: #efefef;
+}
+
+.MuiTableCell-head {
+    font-weight: 700 !important;
+}
+
+.MuiTableRow-root:nth-child(even) {
+    background-color: #efefef;
+}
