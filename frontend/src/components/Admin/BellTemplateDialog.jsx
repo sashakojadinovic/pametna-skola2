@@ -7,7 +7,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button,
-  TextField, Stack, Typography, Divider, IconButton, Tooltip, Box
+  TextField, Stack, Typography, Divider, IconButton, Tooltip, Box,
+  Select, MenuItem
 } from "@mui/material";
 import SortIcon from "@mui/icons-material/Sort";
 import AddIcon from "@mui/icons-material/Add";
@@ -30,12 +31,18 @@ function parseSpec(json_spec) {
 function isValidTime(hhmm) { return /^\d{2}:\d{2}$/.test(hhmm || ""); }
 function isHexColor(v) { return /^#([0-9a-fA-F]{6})$/.test(v || ""); }
 
+function addMinutesToHHMM(hhmm, minutes) {
+  const t = dayjs(hhmm, "HH:mm").add(minutes, "minute");
+  return t.format("HH:mm");
+}
+
 export default function BellTemplateDialog({ open, onClose, initialData, onSaved, onError }) {
   const isEdit = Boolean(initialData?.id);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [rings, setRings] = useState([]);
-  const [color, setColor] = useState("#1976d2"); // default boja
+  const [color, setColor] = useState("#1976d2");
+  const [intervalMin, setIntervalMin] = useState(5);
 
   useEffect(() => {
     if (!open) return;
@@ -69,8 +76,27 @@ export default function BellTemplateDialog({ open, onClose, initialData, onSaved
     return copy;
   }, [rings]);
 
-  const addRing = () => setRings((arr) => [...arr, { time: "09:00", label: "" }]);
+  const addRing = () => setRings((arr) => [...arr, { time: "08:00", label: "" }]);
   const sortRings = () => setRings(sortedRings);
+
+  const addRingByInterval = () => {
+    if (!Array.isArray(rings) || rings.length === 0) return;
+    const last = sortedRings[sortedRings.length - 1];
+    const nextTime = addMinutesToHHMM(last.time, intervalMin);
+    const isDup = rings.some(r => r.time === nextTime);
+    const crossesDay = dayjs(nextTime, "HH:mm").isBefore(dayjs(last.time, "HH:mm"));
+
+    if (crossesDay) {
+      onError?.("Следеће звоно би пало у наредни дан.");
+      return;
+    }
+    if (isDup) {
+      onError?.("Звоно за то време већ постоји.");
+      return;
+    }
+
+    setRings(arr => [...arr, { time: nextTime, label: "" }]);
+  };
 
   const save = async () => {
     const payload = {
@@ -90,7 +116,7 @@ export default function BellTemplateDialog({ open, onClose, initialData, onSaved
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle sx={{backgroundColor:"#efefef"}}>{isEdit ? "Уреди шаблон" : "Нови шаблон"}</DialogTitle>
+      <DialogTitle sx={{ backgroundColor: "#efefef" }}>{isEdit ? "Уреди шаблон" : "Нови шаблон"}</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2}>
           <TextField label="Назив*" value={name} onChange={(e) => setName(e.target.value)} helperText="Обавезно поље" />
@@ -110,14 +136,32 @@ export default function BellTemplateDialog({ open, onClose, initialData, onSaved
 
           <Divider />
 
-          <Stack direction="row" alignItems="center" justifyContent="space-between">
-            <Typography variant="h6">Звона</Typography>
-            <Stack direction="row" spacing={1}>
-              <Tooltip title="Сортирај по времену">
-                <IconButton onClick={sortRings}><SortIcon /></IconButton>
-              </Tooltip>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Typography variant="h6" sx={{ flexGrow: 1 }}>Звона</Typography>
+            <Tooltip title="Сортирај по времену">
+              <IconButton onClick={sortRings}><SortIcon /></IconButton>
+            </Tooltip>
+            {rings.length === 0 ? (
               <Button startIcon={<AddIcon />} onClick={addRing} variant="outlined">Додај звоно</Button>
-            </Stack>
+            ) : (
+              <>
+                <Select
+                  size="small"
+                  value={intervalMin}
+                  onChange={(e) => setIntervalMin(Number(e.target.value))}
+                  sx={{ minWidth: 90 }}
+                  aria-label="Интервал"
+                >
+                  {[5, 10, 15, 20, 30, 35, 45].map(v => (
+                    <MenuItem key={v} value={v}>{v} мин</MenuItem>
+                  ))}
+                </Select>
+                <Button variant="contained" onClick={addRingByInterval}>
+                  Додај по интервалу
+                </Button>
+              </>
+            )}
+
           </Stack>
 
           <Stack spacing={1}>

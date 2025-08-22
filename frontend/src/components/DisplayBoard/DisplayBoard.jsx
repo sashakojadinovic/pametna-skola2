@@ -10,6 +10,10 @@ import { Box, Card, CardContent, Typography, Stack, Chip, Divider } from "@mui/m
 import bellApi from "../../api/bellApi";
 import ProgressTimer from "./ProgressTimer";
 import MiniSchedule from "./MiniSchedule";
+//import AnnouncementBoard from "./AnnouncementBoard";
+import CarouselAnnouncementBoard from "./CarouselAnnouncementBoard";
+
+
 import {
   buildRings,
   buildSegments,
@@ -18,11 +22,41 @@ import {
   formatMS,
 } from "../../utils/bell";
 
+
 export default function DisplayBoard() {
   const [today, setToday] = useState(null);     // { date, is_holiday, json_spec } | null
   const [nextBell, setNextBell] = useState(null); // { ts, label } | null
   const [nowTick, setNowTick] = useState(Date.now());
   const socketRef = useRef(null);
+  const [announcements, setAnnouncements] = useState([]);
+  const [overrideAnnouncement, setOverrideAnnouncement] = useState(null);
+
+
+  // fetch aktivna obaveštenja
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/announcements/active");
+        const data = await res.json();
+        setAnnouncements(data.items || []);
+      } catch (e) {
+        console.warn("Greška pri učitavanju obaveštenja", e);
+      }
+    })();
+  }, []);
+
+  // slušaj push notifikaciju
+  useEffect(() => {
+    if (!socketRef.current) return;
+    const s = socketRef.current;
+    s.on("announcement:push", (data) => {
+      setOverrideAnnouncement(data);
+      setTimeout(() => setOverrideAnnouncement(null), 20_000); // automatski nestane posle 20s
+    });
+    return () => {
+      s.off("announcement:push");
+    };
+  }, []);
 
   // init: učitaj današnji raspored i sledeće zvono
   useEffect(() => {
@@ -56,7 +90,37 @@ export default function DisplayBoard() {
     return () => clearInterval(t);
   }, []);
 
-  // Izračuni
+useEffect(() => {
+  if (!socketRef.current) return;
+  const s = socketRef.current;
+
+  const refetchActive = async () => {
+    try {
+      const res = await fetch("/api/announcements/active");
+      const data = await res.json();
+      setAnnouncements(data.items || []);
+    } catch (e) {
+      console.warn("Greška pri refetch-u aktivnih obaveštenja:", e);
+    }
+  };
+
+  s.on("announcement:push", (data) => {
+    setOverrideAnnouncement(data);
+    setTimeout(() => setOverrideAnnouncement(null), 20000);
+  });
+
+  s.on("announcement:created", refetchActive);
+  s.on("announcement:updated", refetchActive);
+  s.on("announcement:deleted", refetchActive);
+
+  return () => {
+    s.off("announcement:push");
+    s.off("announcement:created");
+    s.off("announcement:updated");
+    s.off("announcement:deleted");
+  };
+}, []);
+
   const rings = useMemo(() => buildRings(today?.json_spec), [today]);
   const segments = useMemo(() => buildSegments(rings), [rings]);
 
@@ -85,7 +149,10 @@ export default function DisplayBoard() {
     <Box sx={{ p: 3 }}>
       <Card sx={{ mx: "auto", textAlign: "center", p: 2 }}>
         <CardContent>
-          <Typography variant="h3" gutterBottom>Огласна табла</Typography>
+          <Typography variant="h5" gutterBottom>Огласна табла</Typography>
+          {/*           <AnnouncementBoard items={announcements} override={overrideAnnouncement} />
+ */}
+          <CarouselAnnouncementBoard items={announcements} override={overrideAnnouncement} />
 
           {isHoliday ? (
             <Typography variant="h5" color="text.secondary" sx={{ my: 2 }}>
@@ -100,7 +167,7 @@ export default function DisplayBoard() {
                   color={current?.type === "ЧАС" ? "primary" : "default"}
                 />
                 {current?.type === "ЧАС" && (
-                  <Chip label={`Час ${current?.periodNo ?? "?"}`} color="secondary" />
+                  <Chip label={`${current?.periodNo ?? "?"}. ЧАС `} color="secondary" />
                 )}
               </Stack>
 
