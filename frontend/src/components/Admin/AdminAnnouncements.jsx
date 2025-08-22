@@ -69,7 +69,7 @@ export default function AdminAnnouncements() {
             </Stack>
 
             <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-                {["all", "active", "scheduled", "expired"].map((s) => (
+                {["all", "active", "expired"].map((s) => (
                     <Button
                         key={s}
                         variant={s === status ? "contained" : "outlined"}

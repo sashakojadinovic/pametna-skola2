@@ -10,9 +10,8 @@ import { Box, Card, CardContent, Typography, Stack, Chip, Divider } from "@mui/m
 import bellApi from "../../api/bellApi";
 import ProgressTimer from "./ProgressTimer";
 import MiniSchedule from "./MiniSchedule";
-//import AnnouncementBoard from "./AnnouncementBoard";
 import CarouselAnnouncementBoard from "./CarouselAnnouncementBoard";
-
+import alertSound from "../../assets/sounds/alert-gentle.mp3";
 
 import {
   buildRings,
@@ -22,17 +21,93 @@ import {
   formatMS,
 } from "../../utils/bell";
 
-
 export default function DisplayBoard() {
-  const [today, setToday] = useState(null);     // { date, is_holiday, json_spec } | null
-  const [nextBell, setNextBell] = useState(null); // { ts, label } | null
+  const [today, setToday] = useState(null);
+  const [nextBell, setNextBell] = useState(null);
   const [nowTick, setNowTick] = useState(Date.now());
-  const socketRef = useRef(null);
   const [announcements, setAnnouncements] = useState([]);
   const [overrideAnnouncement, setOverrideAnnouncement] = useState(null);
 
+  const socketRef = useRef(null);
+  const audioRef = useRef(null);
 
-  // fetch aktivna obaveštenja
+  // ====== AUDIO UNLOCK STATE ======
+  const [audioReady, setAudioReady] = useState(false);
+  const [showUnlock, setShowUnlock] = useState(false);
+
+  // 1) Init jednog Audio елемента + покушај тихог warmup-а и аутоматског unlock-а
+  useEffect(() => {
+    const audio = new Audio(alertSound);
+    audio.volume = 1.0;
+    audioRef.current = audio;
+
+    // тихи warmup
+    const warm = new Audio(alertSound);
+    warm.volume = 0;
+    warm.play()
+      .then(() => {
+        warm.pause();
+        warm.currentTime = 0;
+      })
+      .catch(() => {});
+
+    // покушај аутоматског unlock-а на прву корисничку интеракцију
+    const tryUnlockOnce = async () => {
+      try {
+        await audio.play();
+        audio.pause();
+        audio.currentTime = 0;
+        setAudioReady(true);
+        setShowUnlock(false);
+        window.removeEventListener("pointerdown", tryUnlockOnce);
+        window.removeEventListener("keydown", tryUnlockOnce);
+      } catch {
+        // и даље блокирано — омогући ручни unlock
+      }
+    };
+    window.addEventListener("pointerdown", tryUnlockOnce, { once: true });
+    window.addEventListener("keydown", tryUnlockOnce, { once: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", tryUnlockOnce);
+      window.removeEventListener("keydown", tryUnlockOnce);
+    };
+  }, []);
+
+  // 2) Ручно откључавање звука (UI дугме)
+  const unlockAudio = async () => {
+    if (!audioRef.current) return;
+    try {
+      await audioRef.current.play();
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      setAudioReady(true);
+      setShowUnlock(false);
+    } catch (e) {
+      console.warn("Audio unlock failed:", e);
+      setShowUnlock(true);
+    }
+  };
+
+  // 3) Свирање звука — ако није откључано, прикажи UI
+  const playAlertSound = () => {
+    if (!audioRef.current) return;
+    if (audioReady) {
+      try {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        audioRef.current.play().catch((e) => console.warn("play() blocked:", e));
+      } catch (e) {
+        console.warn("audio error:", e);
+      }
+    } else {
+      setShowUnlock(true);
+    }
+  };
+
+  // ========== DATA LOADS ==========
+
+  // Учитaj активна обавештења на mount
   useEffect(() => {
     (async () => {
       try {
@@ -40,25 +115,12 @@ export default function DisplayBoard() {
         const data = await res.json();
         setAnnouncements(data.items || []);
       } catch (e) {
-        console.warn("Greška pri učitavanju obaveštenja", e);
+        console.warn("Грешка при учитавању обавештења", e);
       }
     })();
   }, []);
 
-  // slušaj push notifikaciju
-  useEffect(() => {
-    if (!socketRef.current) return;
-    const s = socketRef.current;
-    s.on("announcement:push", (data) => {
-      setOverrideAnnouncement(data);
-      setTimeout(() => setOverrideAnnouncement(null), 20_000); // automatski nestane posle 20s
-    });
-    return () => {
-      s.off("announcement:push");
-    };
-  }, []);
-
-  // init: učitaj današnji raspored i sledeće zvono
+  // Иницијално: данашњи распоред и следеће звоно
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -67,59 +129,55 @@ export default function DisplayBoard() {
       setToday(t);
       setNextBell(n);
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  // socket.io – sluša promene
-  useEffect(() => {
-    const url = import.meta.env.VITE_WS_BASE || "http://localhost:3000";
-    const s = io(url, { transports: ["websocket"] });
-    socketRef.current = s;
-
-    s.on("bell:next", (payload) => setNextBell(payload));
-    s.on("bell:triggered", () => {
-      // nakon okidanja, backend emitovaće novi 'bell:next'
-    });
-
-    return () => { s.disconnect(); };
-  }, []);
-
-  // 1s ticker
+  // 1s тикер
   useEffect(() => {
     const t = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
-useEffect(() => {
-  if (!socketRef.current) return;
-  const s = socketRef.current;
+  // Socket иницијализација и handler-и
+  useEffect(() => {
+    const url = import.meta.env.VITE_WS_BASE || "http://localhost:3000";
+    const s = io(url, { transports: ["websocket"] });
+    socketRef.current = s;
 
-  const refetchActive = async () => {
-    try {
-      const res = await fetch("/api/announcements/active");
-      const data = await res.json();
-      setAnnouncements(data.items || []);
-    } catch (e) {
-      console.warn("Greška pri refetch-u aktivnih obaveštenja:", e);
-    }
-  };
+    const refetchActive = async () => {
+      try {
+        const res = await fetch("/api/announcements/active");
+        const data = await res.json();
+        setAnnouncements(data.items || []);
+      } catch (e) {
+        console.warn("Грешка при refetch-у активних обавештења:", e);
+      }
+    };
 
-  s.on("announcement:push", (data) => {
-    setOverrideAnnouncement(data);
-    setTimeout(() => setOverrideAnnouncement(null), 20000);
-  });
+    // bell
+    s.on("bell:next", (payload) => setNextBell(payload));
+    s.on("bell:triggered", () => {});
 
-  s.on("announcement:created", refetchActive);
-  s.on("announcement:updated", refetchActive);
-  s.on("announcement:deleted", refetchActive);
+    // announcements live updates
+    s.on("announcement:created", refetchActive);
+    s.on("announcement:updated", refetchActive);
+    s.on("announcement:deleted", refetchActive);
 
-  return () => {
-    s.off("announcement:push");
-    s.off("announcement:created");
-    s.off("announcement:updated");
-    s.off("announcement:deleted");
-  };
-}, []);
+    // push override + звук
+    s.on("announcement:push", (data) => {
+      setOverrideAnnouncement(data);
+      playAlertSound();
+      setTimeout(() => setOverrideAnnouncement(null), 60000);
+    });
+
+    return () => {
+      s.disconnect();
+    };
+  }, [audioReady]);
+
+  // ========== DERIVED TIMINGS ==========
 
   const rings = useMemo(() => buildRings(today?.json_spec), [today]);
   const segments = useMemo(() => buildSegments(rings), [rings]);
@@ -145,13 +203,14 @@ useEffect(() => {
 
   const isHoliday = Boolean(today?.is_holiday);
 
+  // ========== RENDER ==========
+
   return (
     <Box sx={{ p: 3 }}>
       <Card sx={{ mx: "auto", textAlign: "center", p: 2 }}>
         <CardContent>
           <Typography variant="h5" gutterBottom>Огласна табла</Typography>
-          {/*           <AnnouncementBoard items={announcements} override={overrideAnnouncement} />
- */}
+
           <CarouselAnnouncementBoard items={announcements} override={overrideAnnouncement} />
 
           {isHoliday ? (
@@ -160,7 +219,7 @@ useEffect(() => {
             </Typography>
           ) : (
             <>
-              {/* Trenutni status */}
+              {/* Тренутни статус */}
               <Stack direction="row" spacing={2} justifyContent="center" alignItems="center" sx={{ mb: 2 }}>
                 <Chip
                   label={current?.type || "Ван распореда"}
@@ -171,7 +230,7 @@ useEffect(() => {
                 )}
               </Stack>
 
-              {/* Preostalo u tekućem intervalu + progress bar */}
+              {/* Преостало у текућем интервалу + progress bar */}
               <ProgressTimer
                 startTs={current?.startTs || null}
                 endTs={current?.endTs || null}
@@ -179,13 +238,13 @@ useEffect(() => {
                 label={
                   current
                     ? current.type === "ЧАС"
-                      ? `Преостало у часу ${current.periodNo ?? ""}`.trim()
-                      : "Преостало у одмору"
+                      ? "Преостало време до краја часа"
+                      : "Преостало време до краја одмора"
                     : "Ван школског распореда"
                 }
               />
 
-              {/* Fallback prikaz za slučaj da nema aktivnog segmenta */}
+              {/* Fallback ако нема активног сегмента */}
               {!current && (
                 <>
                   <Typography variant="h6" sx={{ mt: 2 }}>
@@ -201,26 +260,41 @@ useEffect(() => {
 
               <Divider sx={{ my: 2 }} />
 
-              {/* Sledeće zvono i odbrojavanje */}
+              {/* Следеће звоно и одбројавање */}
               <Typography variant="h6" sx={{ mb: 0.5 }}>
-                Следеће звоно: {nextTs ? formatClock(nextTs) : "—"}
+                Следеће звоно у {nextTs ? formatClock(nextTs) : "—"}{" "}
+                {nextBell?.label ? (
+                  <Box component="span" sx={{ textTransform: "lowercase" }}>
+                    ({nextBell.label})
+                  </Box>
+                ) : null}
               </Typography>
-              {nextBell?.label && (
-                <Typography variant="body1" sx={{ mb: 1 }}>
-                  {nextBell.label}
-                </Typography>
-              )}
-              <Typography variant="h3" sx={{ fontWeight: 700 }}>
-                {nextTs ? formatHMS(countdownMs) : "Нема планираних звона"}
-              </Typography>
-              {/* Мини распоред данас */}
-              <MiniSchedule
+
+              {/* Мини распоред за данас (по потреби укључити) */}
+              {/* <MiniSchedule
                 rings={rings}
                 segments={segments}
                 now={nowTick}
                 nextTs={nextTs}
-              />
+              /> */}
             </>
+          )}
+
+          {/* Једнократни UI за откључавање звука */}
+          {showUnlock && !audioReady && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Звук је блокиран у прегледачу. Омогући да би се чуо аларм за хитна обавештења.
+              </Typography>
+              <Stack direction="row" justifyContent="center">
+                <Chip
+                  label="Укључи звук"
+                  color="primary"
+                  onClick={unlockAudio}
+                  sx={{ px: 2, fontWeight: 600 }}
+                />
+              </Stack>
+            </Box>
           )}
         </CardContent>
       </Card>

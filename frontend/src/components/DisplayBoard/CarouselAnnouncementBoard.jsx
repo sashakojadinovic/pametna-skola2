@@ -55,13 +55,13 @@ export default function CarouselAnnouncementBoard({ items = [], override = null 
           severity="info"
           sx={{
             mb: 2,
-            fontSize: 18,
+            fontSize: 30,
             fontWeight: "bold",
             borderLeft: "6px solid",
             borderColor: "info.main",
           }}
         >
-          📢 Хитно обавештење: {override?.title}
+          📢 Хитно обавештење:  {override?.body}
         </Alert>
       </Fade>
 
