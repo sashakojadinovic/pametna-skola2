@@ -25,18 +25,33 @@ export default function ProgressTimer({ startTs, endTs, now, label }) {
 
   const value = total > 0 ? Math.round((elapsed / total) * 100) : 0;
 
-  const mm = Math.floor(remaining / 1000 / 60);
-  const ss = Math.floor((remaining / 1000) % 60);
+  // ⇩ HH:MM:SS format
+  const totalSeconds = Math.floor(remaining / 1000);
+  const hh = Math.floor(totalSeconds / 3600);
+  const mm = Math.floor((totalSeconds % 3600) / 60);
+  const ss = totalSeconds % 60;
 
   return (
     <Box sx={{ width: "100%", textAlign: "center" }}>
       <Typography variant="h6" sx={{ mb: 0.5 }}>
-        {label}
+        {label? label.type === "ЧАС"
+                      ? "Преостало време до краја часа"
+                      : "Преостало време до краја одмора"
+                    : "Ван школског распореда"}
+       
       </Typography>
       <Typography variant="h1" sx={{ fontWeight: 800, mb: 1 }}>
-        {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
+        {String(hh).padStart(2, "0")}:
+        {String(mm).padStart(2, "0")}:
+        {String(ss).padStart(2, "0")}
       </Typography>
-      <LinearProgress color="success" variant="determinate" value={value} sx={{ height: 10, borderRadius: 2 }} />
+      <LinearProgress
+        color={label?.type === "ЧАС" ? "error" : "success"}
+        variant="determinate"
+        value={value}
+        sx={{ height: 10, borderRadius: 2 }}
+      />
     </Box>
   );
 }
+

@@ -206,10 +206,11 @@ export default function DisplayBoard() {
   // ========== RENDER ==========
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Card sx={{ mx: "auto", textAlign: "center", p: 2 }}>
+    <Box sx={{ p: 3}}>
+      <Card sx={{ mx: "auto", textAlign: "center", p: 2, backgroundColor: "#d8d8d8"  }}>
         <CardContent>
-          <Typography variant="h5" gutterBottom>Огласна табла</Typography>
+          {announcements.length>0?<Typography variant="h5" gutterBottom>Обавештења</Typography>:""}
+          
 
           <CarouselAnnouncementBoard items={announcements} override={overrideAnnouncement} />
 
@@ -222,8 +223,9 @@ export default function DisplayBoard() {
               {/* Тренутни статус */}
               <Stack direction="row" spacing={2} justifyContent="center" alignItems="center" sx={{ mb: 2 }}>
                 <Chip
+                  sx={{fontSize: "32px" }}
                   label={current?.type || "Ван распореда"}
-                  color={current?.type === "ЧАС" ? "primary" : "default"}
+                  color={current?.type === "ЧАС" ? "error" : "success"}
                 />
                {/*  {current?.type === "ЧАС" && (
                   <Chip label={`${current?.periodNo ?? "?"}. ЧАС `} color="success" />
@@ -235,13 +237,7 @@ export default function DisplayBoard() {
                 startTs={current?.startTs || null}
                 endTs={current?.endTs || null}
                 now={nowTick}
-                label={
-                  current
-                    ? current.type === "ЧАС"
-                      ? "Преостало време до краја часа"
-                      : "Преостало време до краја одмора"
-                    : "Ван школског распореда"
-                }
+                label={ current}
               />
 
               {/* Fallback ако нема активног сегмента */}

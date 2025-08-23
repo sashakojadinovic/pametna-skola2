@@ -60,9 +60,9 @@ export default function AdminAnnouncements() {
     };
 
     return (
-        <Box sx={{ p: 2 }}>
+        <Box >
             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-                <Typography variant="h5">Обавештења</Typography>
+                <Typography variant="h4">Обавештења</Typography>
                 <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setEditData(null); setDialogOpen(true); }}>
                     Ново
                 </Button>
@@ -108,7 +108,7 @@ export default function AdminAnnouncements() {
                                         label={a.priority}
                                         color={
                                             a.priority === "URGENT" ? "error" :
-                                                a.priority === "HIGH" ? "warning" : "info"
+                                                a.priority === "HIGH" ? "warning" : "primary"
                                         }
                                         size="small"
                                     />

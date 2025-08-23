@@ -16,7 +16,7 @@ import {
 import DOMPurify from "dompurify";
 
 const priorityColor = {
-  NORMAL: "info",
+  NORMAL: "primary",
   HIGH: "warning",
   URGENT: "error",
 };
@@ -40,7 +40,7 @@ export default function CarouselAnnouncementBoard({ items = [], override = null 
         setIndex((i) => (i + 1) % items.length);
         setFadeIn(true);
       }, 400);
-    }, 55000);
+    }, 15000);
 
     return () => clearInterval(interval);
   }, [items, override]);
@@ -48,7 +48,7 @@ export default function CarouselAnnouncementBoard({ items = [], override = null 
   if (!items.length && !override) return null;
 
   return (
-    <Box sx={{ mb: 3, minHeight: 220 }}>
+    <Box sx={{ mb: 3, minHeight: 220}}>
       {/* Push obaveštenje (override) — prikazuje se samo dok roditelj prosleđuje prop */}
       <Fade in={Boolean(override)} mountOnEnter unmountOnExit>
         <Alert
@@ -72,9 +72,10 @@ export default function CarouselAnnouncementBoard({ items = [], override = null 
             <Card
               key={visibleItem.id}
               sx={{
-                borderLeft: `6px solid`,
+                borderTop: `6px solid`,
                 borderColor: `${priorityColor[visibleItem.priority] || "info"}.main`,
                 minHeight: 180,
+                backgroundColor: "#efefef" 
               }}
             >
               <CardContent>

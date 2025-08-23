@@ -38,6 +38,7 @@ function DayRenderer(props) {
 
   return (
     <Box sx={{ position: "relative" }}>
+
       <PickersDay
         {...props}
         outsideCurrentMonth={outsideCurrentMonth}
@@ -201,109 +202,112 @@ export default function DayScheduleCalendar() {
   const meta = useMemo(() => ({ byDate, selected }), [byDate, selected]);
 
   return (
-    <Card>
-      <CardContent>
-        <Typography variant="h5" sx={{ mb: 2 }}>Календар распореда</Typography>
+    <Box>
+      <Typography variant="h4" sx={{ mb: 2 }}>Календар распореда</Typography>
 
-        {/* GRID LAYOUT: Лево календар, десно sidebar */}
-        <Grid spacing={2}>
-          <Grid item xs={12} md={8}>
+      <Card>
+        <CardContent>         
 
-            <Card variant="outlined">
-              <CardContent>
-                <DateCalendar
-                  value={month}
-                  onChange={() => { }}
-                  onMonthChange={handleMonthChange}
-                  reduceAnimations
-                  disableHighlightToday={false}
-                  slots={{
-                    day: (p) => (
-                      <DayRenderer
-                        {...p}
-                        onSelectToggle={(ymd, e) => {
-                          if (e?.metaKey || e?.ctrlKey || e?.shiftKey) toggleSelect(ymd, e);
-                          else { toggleSelect(ymd, e); openEdit(ymd); }
-                        }}
-                        meta={meta}
-                      />
-                    ),
-                  }}
-                />
+          {/* GRID LAYOUT: Лево календар, десно sidebar */}
+          <Grid spacing={2}>
+            <Grid item xs={12} md={8}>
 
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>                 
-                  <Chip size="small" variant="outlined" label="Боја тачке = шаблон" />
-                </Stack>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid item xs={12} md={4}>
-            <Card variant="outlined" sx={{ position: { md: 'sticky' }, top: { md: 16 } }}>
-              <CardContent>
-                <Typography variant="subtitle1" sx={{ mb: 1 }}>Масовне акције <Chip label={`Изабрано: ${selected.size}`} size="small" /></Typography>
-
-                   
-                    <Typography color="text.secondary">{loading ? "Учитавање…" : ""}</Typography>
-
-                <Stack spacing={1.5}>
-                  <TemplateSelect
-                    value={bulkTemplateId}
-                    onChange={setBulkTemplateId}
-                    label="Шаблон за примену"
-                    fullWidth
-                    sx={{ minWidth: { xs: '100%', sm: 320 } }}
+              <Card variant="outlined">
+                <CardContent>
+                  <DateCalendar
+                    value={month}
+                    onChange={() => { }}
+                    onMonthChange={handleMonthChange}
+                    reduceAnimations
+                    disableHighlightToday={false}
+                    slots={{
+                      day: (p) => (
+                        <DayRenderer
+                          {...p}
+                          onSelectToggle={(ymd, e) => {
+                            if (e?.metaKey || e?.ctrlKey || e?.shiftKey) toggleSelect(ymd, e);
+                            else { toggleSelect(ymd, e); openEdit(ymd); }
+                          }}
+                          meta={meta}
+                        />
+                      ),
+                    }}
                   />
 
-                  <Tooltip title="Примени шаблон на изабране дане">
-                    <span>
-                      <Button
-                        variant="contained"
-                        disabled={selected.size === 0 }
-                        onClick={applyBulkTemplate}
-                        fullWidth
-                      >
-                        Примени шаблон ({selected.size})
-                      </Button>
-                    </span>
-                  </Tooltip>
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
+                    <Chip size="small" variant="outlined" label="Боја тачке = шаблон" />
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
 
-                  <Button onClick={clearBulk} disabled={selected.size === 0} fullWidth>
-                    Очисти избор
-                  </Button>
+            <Grid item xs={12} md={4}>
+              <Card variant="outlined" sx={{ position: { md: 'sticky' }, top: { md: 16 } }}>
+                <CardContent>
+                  <Typography variant="subtitle1" sx={{ mb: 1 }}>Масовне акције <Chip label={`Изабрано: ${selected.size}`} size="small" /></Typography>
 
-                  <Divider />
-                  
-                </Stack>
-              </CardContent>
-            </Card>
+
+                  <Typography color="text.secondary">{loading ? "Учитавање…" : ""}</Typography>
+
+                  <Stack spacing={1.5}>
+                    <TemplateSelect
+                      value={bulkTemplateId}
+                      onChange={setBulkTemplateId}
+                      label="Шаблон за примену"
+                      fullWidth
+                      sx={{ minWidth: { xs: '100%', sm: 320 } }}
+                    />
+
+                    <Tooltip title="Примени шаблон на изабране дане">
+                      <span>
+                        <Button
+                          variant="contained"
+                          disabled={selected.size === 0}
+                          onClick={applyBulkTemplate}
+                          fullWidth
+                        >
+                          Примени шаблон ({selected.size})
+                        </Button>
+                      </span>
+                    </Tooltip>
+
+                    <Button onClick={clearBulk} disabled={selected.size === 0} fullWidth>
+                      Очисти избор
+                    </Button>
+
+                    <Divider />
+
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
           </Grid>
-        </Grid>
-      </CardContent>
+        </CardContent>
 
-      {/* Single-day dialog */}
-      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Подешавање дана — {editDate}</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2}>
-            <TemplateSelect value={editTemplateId} onChange={setEditTemplateId} label="Шаблон звона" fullWidth />
-            <textarea
-              placeholder="Напомена (опционо)"
-              value={editNote}
-              onChange={(e) => setEditNote(e.target.value)}
-              style={{ width: "100%", minHeight: 80, padding: 8, borderRadius: 8, border: "1px solid var(--mui-palette-divider)" }}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditOpen(false)}>Откажи</Button>
-          <Button onClick={saveEdit} variant="contained">Сачувај</Button>
-        </DialogActions>
-      </Dialog>
+        {/* Single-day dialog */}
+        <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Подешавање дана — {editDate}</DialogTitle>
+          <DialogContent dividers>
+            <Stack spacing={2}>
+              <TemplateSelect value={editTemplateId} onChange={setEditTemplateId} label="Шаблон звона" fullWidth />
+              <textarea
+                placeholder="Напомена (опционо)"
+                value={editNote}
+                onChange={(e) => setEditNote(e.target.value)}
+                style={{ width: "100%", minHeight: 80, padding: 8, borderRadius: 8, border: "1px solid var(--mui-palette-divider)" }}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setEditOpen(false)}>Откажи</Button>
+            <Button onClick={saveEdit} variant="contained">Сачувај</Button>
+          </DialogActions>
+        </Dialog>
 
-      <Snackbar open={toast.open} autoHideDuration={3000} onClose={() => setToast((t) => ({ ...t, open: false }))}>
-        <Alert severity={toast.severity} variant="filled">{toast.message}</Alert>
-      </Snackbar>
-    </Card>
+        <Snackbar open={toast.open} autoHideDuration={3000} onClose={() => setToast((t) => ({ ...t, open: false }))}>
+          <Alert severity={toast.severity} variant="filled">{toast.message}</Alert>
+        </Snackbar>
+      </Card>
+    </Box>
   );
 }
