@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Box, Card, CardContent, Typography, Stack, Button, Chip,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  Checkbox, FormControlLabel, Snackbar, Alert, Tooltip,
+  Snackbar, Alert, Tooltip,
   Grid, Divider
 } from "@mui/material";
 import { DateCalendar, PickersDay } from "@mui/x-date-pickers";
@@ -16,6 +16,7 @@ import dayjs from "dayjs";
 import "dayjs/locale/sr";
 import bellApi from "../../api/bellApi";
 import TemplateSelect from "./TemplateSelect";
+import RingNowButton from "./RingNowButton";
 
 dayjs.locale("sr");
 
@@ -206,11 +207,11 @@ export default function DayScheduleCalendar() {
       <Typography variant="h4" sx={{ mb: 2 }}>Календар распореда</Typography>
 
       <Card>
-        <CardContent>         
+        <CardContent>
 
           {/* GRID LAYOUT: Лево календар, десно sidebar */}
           <Grid>
-            <Grid  item xs={12} md={8}>
+            <Grid item xs={12} md={8}>
 
               <Card variant="outlined">
                 <CardContent>
@@ -276,6 +277,7 @@ export default function DayScheduleCalendar() {
                     </Button>
 
                     <Divider />
+                    <RingNowButton />
 
                   </Stack>
                 </CardContent>

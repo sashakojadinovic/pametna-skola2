@@ -1,21 +1,37 @@
 /**
-* File: bell.service.js
-* Path: /src/modules/bell
-* Author: Saša Kojadinović
-*/
+ * File: bell.service.js
+ * Path: /src/modules/bell
+ * Author: Saša Kojadinović
+ */
+
 import { DateTime } from 'luxon';
 import { config } from '../../config/index.js';
 import { logger } from '../../utils/logger.js';
 import { nowTZ, parseTimeToday } from '../../utils/time.js';
 import { getRelay } from './bell.gpio.js';
-// JSON spec format (example):
-// {
-// "rings": [
-// { "time": "08:00", "label": "Почетак 1." },
-// { "time": "08:45", "label": "Крај 1." },
-// ...
-// ]
-// }
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ✅ Lokalna funkcija za puštanje zvuka
+function playBellSound(filePath) {
+    const fullPath = path.resolve(filePath);
+    const child = spawn("ffplay", [
+        "-nodisp",
+        "-autoexit",
+        "-loglevel", "quiet",
+        fullPath
+    ], {
+        detached: true,
+        stdio: "ignore"
+    });
+    child.unref();
+}
+
+// 🔄 Interno stanje rasporeda
 const state = {
     nextRingTs: null,
     nextLabel: null,
@@ -23,17 +39,21 @@ const state = {
     db: null,
     io: null
 };
+
+// 🔽 Učitavanje rasporeda
 async function fetchTodayTemplate(db) {
     const today = nowTZ(config.tz).toFormat('yyyy-LL-dd');
     const row = await db.get(
         `SELECT ds.date, ds.is_holiday, bt.json_spec
-FROM day_schedule ds
-LEFT JOIN bell_templates bt ON bt.id = ds.bell_template_id
-WHERE ds.date = ?`,
+     FROM day_schedule ds
+     LEFT JOIN bell_templates bt ON bt.id = ds.bell_template_id
+     WHERE ds.date = ?`,
         [today]
     );
     return row;
 }
+
+// 🔁 Preračunavanje zvona iz šablona
 function computeTodayRings(json_spec) {
     if (!json_spec) return [];
     let spec;
@@ -46,6 +66,7 @@ function computeTodayRings(json_spec) {
     return list.filter(x => x.ts > nowTZ(config.tz)).sort((a, b) => a.ts - b.ts);
 }
 
+// 📅 Planiranje sledećeg zvona
 async function scheduleNext(db, io) {
     clearTimeout(state.timer);
     state.timer = null;
@@ -69,10 +90,11 @@ async function scheduleNext(db, io) {
     io.emit('bell:next', { ts: state.nextRingTs, label: state.nextLabel });
     state.timer = setTimeout(async () => {
         await triggerBell(db, io, config.relayPulseMs, 'SCHEDULE');
-        // Reschedule after trigger
         scheduleNext(db, io);
     }, delay);
 }
+
+// 🔔 Okidanje zvona (ručno ili po rasporedu)
 export async function triggerBell(db, io, durationMs, source = 'MANUAL') {
     const relay = getRelay();
     const start = Date.now();
@@ -82,8 +104,16 @@ export async function triggerBell(db, io, durationMs, source = 'MANUAL') {
             'INSERT INTO bell_log (ts, action, duration_ms, result, message) VALUES (?, ?, ?, ?, ?)',
             [new Date().toISOString(), 'TRIGGER', durationMs, 'OK', source]
         );
+
         io.emit('bell:triggered', { ts: new Date().toISOString(), durationMs });
         logger.info(`Bell TRIGGER OK (${durationMs}ms)`);
+
+        // ▶️ Pusti zvuk lokalno na serveru
+        const audioFile = path.join(__dirname, "../../audio/bell-oldschool.mp3");
+        if (config.enableAudioBackend) {
+            playBellSound(audioFile);
+        }
+
     } catch (e) {
         await db.run(
             'INSERT INTO bell_log (ts, action, duration_ms, result, message) VALUES (?, ?, ?, ?, ?)',
@@ -95,12 +125,14 @@ export async function triggerBell(db, io, durationMs, source = 'MANUAL') {
         logger.info(`Trigger total ${total}ms`);
     }
 }
+
+// 📦 Exportovani scheduler objekat
 export const bellScheduler = {
     async init({ db, io }) {
         state.db = db; state.io = io;
         await scheduleNext(db, io);
     },
-    async rehydrate() { // call on schedule/template change
+    async rehydrate() {
         await scheduleNext(state.db, state.io);
     },
     getNext() {
