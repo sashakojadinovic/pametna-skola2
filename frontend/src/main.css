@@ -6,8 +6,10 @@ body {
     background-color: #efefef;
 }
 
-.MuiTableCell-head {
+th.MuiTableCell-head {
     font-weight: 700 !important;
+    color: #ffffff;
+    background-color: #36383a;
 }
 
 .MuiTableRow-root:nth-child(even) {

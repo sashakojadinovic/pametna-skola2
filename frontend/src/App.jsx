@@ -12,18 +12,19 @@ import AdminPage from './pages/AdminPage'
 export default function App() {
   const location = useLocation();
   const currentPath = location.pathname;
-  const displayValue = currentPath === '/'? 'none': 'block';
+  const displayValue = currentPath !== '/'? 'block': 'none';
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
 
-        <AppBar sx={{display: displayValue}}  position="static">
+        {/* <AppBar sx={{display: displayValue}}  position="static"> */}
+        <AppBar sx={{display: 'block'}}  position="static">
           <Toolbar >
             <Button color="inherit" component={Link} to="/">Огласни монитор</Button>
             <Button color="inherit" component={Link} to="/admin">Админ</Button>
           </Toolbar>
         </AppBar>
-        <Container maxWidth="xl" sx={{ py: 3 }}>
+        <Container maxWidth={false}>
           <Routes>
             <Route path="/" element={<MonitorPage />} />
             <Route path="/admin" element={<AdminPage />} />

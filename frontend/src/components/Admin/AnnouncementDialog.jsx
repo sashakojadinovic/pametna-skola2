@@ -5,11 +5,20 @@
  */
 
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, Stack, Button, MenuItem, FormControlLabel, Switch
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Stack,
+  Button,
+  MenuItem,
+  FormControlLabel,
+  Switch,
 } from "@mui/material";
 import dayjs from "dayjs";
 import { useEffect, useMemo, useState } from "react";
+import api from "../../api/axiosInstance";
 
 export default function AnnouncementDialog({ open, onClose, initialData = null, onSaved }) {
   const isEdit = Boolean(initialData?.id);
@@ -61,21 +70,14 @@ export default function AnnouncementDialog({ open, onClose, initialData = null, 
 
     try {
       if (isEdit) {
-        await fetch(`/api/announcements/${initialData.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+        await api.put(`/announcements/${initialData.id}`, payload);
       } else {
-        await fetch("/api/announcements", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+        await api.post("/announcements", payload);
       }
       onSaved?.();
       onClose();
     } catch (e) {
+      console.error("Грешка при чувању:", e);
       alert("Грешка при чувању.");
     }
   };

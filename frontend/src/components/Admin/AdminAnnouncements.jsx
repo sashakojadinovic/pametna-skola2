@@ -87,7 +87,7 @@ export default function AdminAnnouncements() {
             <TableContainer component={Paper}>
                 <Table size="small">
                     <TableHead>
-                        <TableRow>
+                        <TableRow >
                             <TableCell>Наслов</TableCell>
                             <TableCell>Период</TableCell>
                             <TableCell>Приоритет</TableCell>

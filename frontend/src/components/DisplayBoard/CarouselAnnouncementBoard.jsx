@@ -84,7 +84,7 @@ export default function CarouselAnnouncementBoard({ items = [], override = null 
                 </Typography>
                 {visibleItem.body && (
                   <Typography
-                    variant="p"
+                    variant="body1"
                     component="div"
                     dangerouslySetInnerHTML={{
                       __html: DOMPurify.sanitize(visibleItem.body),

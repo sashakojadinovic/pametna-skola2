@@ -1,0 +1,402 @@
+// File: /var/www/html/pametna-skola2/frontend/src/components/DisplayBoard/MiniSchedule.jsx
+/**
+ * File: MiniSchedule.jsx
+ * Path: /frontend/src/components/DisplayBoard
+ * Author: Saša Kojadinović
+ */
+
+import { useMemo } from "react";
+import {
+  Box,
+  Typography,
+  List,
+  ListItem,
+  ListItemText,
+  Chip,
+  Divider,
+} from "@mui/material";
+import { formatClock } from "../../utils/bell";
+
+/**
+ * Prikaz liste zvona za данас sa isticanjem:
+ *  - текућег интервала (означеног преко segments)
+ *  - следећег звона (nextTs)
+ *
+ * Props:
+ *  - rings: [{ ts: Date, label: string }]
+ *  - segments: [{ startTs, endTs, type, periodNo, ... }]
+ *  - now: number (Date.now())
+ *  - nextTs: Date | null
+ */
+export default function MiniSchedule({ rings = [], segments = [], now, nextTs }) {
+  const nowDate = useMemo(() => new Date(now), [now]);
+
+  // Pronađi aktivan segment, da bismo istakli zvona koja ga omeđuju
+  const activeSeg = useMemo(() => {
+    for (const s of segments) {
+      if (nowDate >= s.startTs && nowDate < s.endTs) return s;
+    }
+    return null;
+  }, [segments, nowDate]);
+
+  // Mapiramo svako zvono sa metapodacima za isticanje
+  const items = useMemo(() => {
+    return rings.map((r, idx) => {
+      const isStartOfActive =
+        activeSeg && +r.ts === +activeSeg.startTs; // +Date → timestamp broj
+      const isEndOfActive =
+        activeSeg && idx > 0 && +r.ts === +activeSeg.endTs;
+      const isNext = nextTs && +r.ts === +nextTs;
+
+      let secondary = r.label || "";
+      if (isStartOfActive && activeSeg?.type === "ЧАС") {
+        secondary = `Почетак часа ${activeSeg.periodNo}${
+          r.label ? ` – ${r.label}` : ""
+        }`;
+      } else if (isStartOfActive && activeSeg?.type === "ОДМОР") {
+        secondary = `Почетак одмора${r.label ? ` – ${r.label}` : ""}`;
+      } else if (isEndOfActive && activeSeg?.type === "ЧАС") {
+        secondary = `Крај часа ${activeSeg.periodNo}${
+          r.label ? ` – ${r.label}` : ""
+        }`;
+      } else if (isEndOfActive && activeSeg?.type === "ОДМОР") {
+        secondary = `Крај одмора${r.label ? ` – ${r.label}` : ""}`;
+      }
+
+      return {
+        key: idx,
+        time: formatClock(r.ts),
+        primary: secondary || "—",
+        isNext,
+        isBoundary: isStartOfActive || isEndOfActive,
+      };
+    });
+  }, [rings, activeSeg, nextTs]);
+
+  if (!rings.length) return null;
+
+  return (
+    <Box sx={{ mt: 3, textAlign: "left" }}>
+      <Typography variant="h5" sx={{ mb: 1 }}>
+        Данашњи распоред
+      </Typography>
+      <List disablePadding>
+        {items.map((it, i) => (
+          <Box key={it.key}>
+            <ListItem
+              sx={{
+                py: 1,
+                borderRadius: 2,
+                bgcolor: it.isBoundary ? "action.hover" : "transparent",
+              }}
+              secondaryAction={
+                it.isNext ? <Chip label="Следеће" color="primary" size="small" /> : null
+              }
+            >
+              <ListItemText
+                primaryTypographyProps={{
+                  variant: "body1",
+                  sx: { fontWeight: it.isBoundary ? 600 : 400 },
+                }}
+                secondaryTypographyProps={{ variant: "body2" }}
+                primary={`${it.time}`}
+                secondary={it.primary}
+              />
+            </ListItem>
+            {i < items.length - 1 && <Divider component="li" />}
+          </Box>
+        ))}
+      </List>
+    </Box>
+  );
+}
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/components/DisplayBoard/ProgressTimer.jsx
+/**
+ * File: ProgressTimer.jsx
+ * Path: /frontend/src/components/DisplayBoard
+ * Author: Saša Kojadinović
+ */
+
+import { Box, LinearProgress, Typography } from "@mui/material";
+
+/**
+ * Prikazuje preostalo vreme i napredak unutar tekućeg intervala.
+ * Props:
+ *  - startTs: Date
+ *  - endTs: Date
+ *  - now: number (Date.now())
+ *  - label: string (нпр. "Час 3" ili "Одмор")
+ */
+export default function ProgressTimer({ startTs, endTs, now, label }) {
+  if (!startTs || !endTs) return null;
+
+  const start = startTs.getTime();
+  const end = endTs.getTime();
+  const total = Math.max(0, end - start);
+  const elapsed = Math.min(Math.max(0, now - start), total);
+  const remaining = Math.max(0, end - now);
+
+  const value = total > 0 ? Math.round((elapsed / total) * 100) : 0;
+
+  // ⇩ HH:MM:SS format
+  const totalSeconds = Math.floor(remaining / 1000);
+  const hh = Math.floor(totalSeconds / 3600);
+  const mm = Math.floor((totalSeconds % 3600) / 60);
+  const ss = totalSeconds % 60;
+
+  return (
+    <Box sx={{ width: "100%", textAlign: "center" }}>
+      <Typography variant="h6" sx={{ mb: 0.5 }}>
+        {label? label.type === "ЧАС"
+                      ? "Преостало време до краја часа"
+                      : "Преостало време до краја одмора"
+                    : "Ван школског распореда"}
+       
+      </Typography>
+      <Typography variant="h1" sx={{ fontWeight: 800, mb: 1 }}>
+        {String(hh).padStart(2, "0")}:
+        {String(mm).padStart(2, "0")}:
+        {String(ss).padStart(2, "0")}
+      </Typography>
+      <LinearProgress
+        color={label?.type === "ЧАС" ? "error" : "success"}
+        variant="determinate"
+        value={value}
+        sx={{ height: 10, borderRadius: 2 }}
+      />
+    </Box>
+  );
+}
+
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/context/GlobalContext.jsx
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/main.jsx
+/**
+ * File: main.jsx
+ * Path: /frontend/src
+ * Author: Saša Kojadinović
+ */
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
+import App from "./App.jsx";
+import './main.css';
+
+import { LocalizationProvider } from "@mui/x-date-pickers";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import "dayjs/locale/sr";
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="sr">
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </LocalizationProvider>
+  </React.StrictMode>
+);
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/pages/AdminPage.jsx
+/**
+ * File: AdminPage.jsx
+ * Path: /frontend/src/pages
+ * Author: Saša Kojadinović
+ */
+
+import { useState } from "react";
+import { Box, Tabs, Tab } from "@mui/material";
+import BellTemplatesPage from "../components/Admin/BellTemplatesPage";
+import DayScheduleCalendar from "../components/Admin/DayScheduleCalendar";
+import AdminAnnouncements from "../components/Admin/AdminAnnouncements"; // ⬅️ dodaj ovo
+
+export default function AdminPage() {
+  const [tab, setTab] = useState(0);
+
+  return (
+    <Box sx={{ p: 2 }}>
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
+        <Tab label="Шаблони" />
+        <Tab label="Календар" />
+        <Tab label="Обавештења" /> {/* ⬅️ novi tab */}
+      </Tabs>
+
+      {tab === 0 && <BellTemplatesPage />}
+      {tab === 1 && <DayScheduleCalendar />}
+      {tab === 2 && <AdminAnnouncements />} {/* ⬅️ nova komponenta */}
+    </Box>
+  );
+}
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/pages/MonitorPage.jsx
+/**
+ * File: MonitorPage.jsx
+ * Path: /frontend/src/pages
+ * Author: Saša Kojadinović
+ */
+import DisplayBoard from '../components/DisplayBoard/DisplayBoard'
+
+export default function MonitorPage() {
+  return <DisplayBoard />
+}
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/theme/muiTheme.js
+/**
+ * File: muiTheme.js
+ * Path: /frontend/src/theme
+ * Author: Saša Kojadinović
+ */
+import { createTheme } from '@mui/material/styles';
+
+const theme = createTheme({
+  palette: {
+    mode: "light",
+    // ✅ redefinisana primary paleta
+    primary: {
+      main: '#36383a',      // tamno siva
+      light: '#676c70',     // svetlija siva
+      dark: '#0e0e0e',      // skoro crna
+      contrastText: '#fff', // bela slova na tamnoj pozadini
+    },
+  },
+  components: {
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          textTransform: "uppercase", 
+        },
+      },
+    },
+  },
+});
+
+export default theme;
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/utils/bell.js
+/**
+ * File: bell.js
+ * Path: /frontend/src/utils
+ * Author: Saša Kojadinović
+ */
+
+// "HH:MM" -> Date za današnji dan (lokalno)
+export function timeToday(hhmm) {
+  const [h, m] = String(hhmm || "").split(":").map((x) => parseInt(x, 10));
+  const now = new Date();
+  const d = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    isFinite(h) ? h : 0,
+    isFinite(m) ? m : 0,
+    0,
+    0
+  );
+  return d;
+}
+
+// Iz json_spec pravi listu zvona [{ ts: Date, label: string }]
+export function buildRings(json_spec) {
+  let spec;
+  try {
+    spec = typeof json_spec === "string" ? JSON.parse(json_spec) : json_spec;
+  } catch {
+    return [];
+  }
+  const rings = Array.isArray(spec?.rings) ? spec.rings : [];
+  return rings
+    .map((r) => ({ ts: timeToday(r.time), label: r.label || "" }))
+    .filter((r) => !Number.isNaN(r.ts?.getTime()))
+    .sort((a, b) => a.ts - b.ts);
+}
+
+// Pokušaj da izvučeš redni broj časa iz labele ("Почетак 3.", "Крај 2."...)
+export function parsePeriodNumber(txt) {
+  const m = String(txt || "").match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/**
+ * Iz zvona pravi segmente (intervale) dana:
+ *  [
+ *    {
+ *      startTs: Date,
+ *      endTs: Date,
+ *      type: "ЧАС" | "ОДМОР",
+ *      periodNo: number,
+ *      startLabel: string,
+ *      endLabel: string
+ *    }, ...
+ *  ]
+ *
+ * Heuristika:
+ * - Ako labela startnog zvona uključuje "крај/kraj/end" -> segment je ОДМОР
+ * - U suprotnom -> ЧАС
+ * - Ako nema dovoljno informacija, alternira: prvi segment tretira kao ЧАС
+ * - Broj časa: pokušava iz labela; fallback je Math.floor(i/2)+1
+ */
+export function buildSegments(rings) {
+  if (!Array.isArray(rings) || rings.length < 2) return [];
+  const segments = [];
+
+  for (let i = 0; i < rings.length - 1; i++) {
+    const start = rings[i];
+    const end = rings[i + 1];
+    const startLbl = (start.label || "").toLowerCase();
+
+    const isBreakExplicit =
+      startLbl.includes("крај") || startLbl.includes("kraj") || startLbl.includes("end");
+
+    const altIsBreak = i % 2 === 1; // 0: čas, 1: odmor, 2: čas, ...
+    const isBreak = isBreakExplicit ? true : altIsBreak;
+
+    const pNum =
+      parsePeriodNumber(start.label) ??
+      parsePeriodNumber(end.label) ??
+      Math.floor(i / 2) + 1;
+
+    segments.push({
+      startTs: start.ts,
+      endTs: end.ts,
+      type: isBreak ? "ОДМОР" : "ЧАС",
+      periodNo: pNum,
+      startLabel: start.label || "",
+      endLabel: end.label || "",
+    });
+  }
+
+  return segments;
+}
+
+// Format pomoćnici
+export const pad2 = (n) => String(n).padStart(2, "0");
+
+export function formatClock(ts) {
+  if (!ts) return "";
+  return new Date(ts).toLocaleTimeString("sr-RS", { hour: "2-digit", minute: "2-digit" });
+}
+
+export function formatHMS(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
+}
+
+export function formatMS(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${pad2(m)}:${pad2(s)}`;
+}
+
+

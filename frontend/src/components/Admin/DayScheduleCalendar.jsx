@@ -209,8 +209,8 @@ export default function DayScheduleCalendar() {
         <CardContent>         
 
           {/* GRID LAYOUT: Лево календар, десно sidebar */}
-          <Grid spacing={2}>
-            <Grid item xs={12} md={8}>
+          <Grid>
+            <Grid  item xs={12} md={8}>
 
               <Card variant="outlined">
                 <CardContent>

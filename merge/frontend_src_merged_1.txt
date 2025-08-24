@@ -1,0 +1,1889 @@
+// File: /var/www/html/pametna-skola2/frontend/src/App.jsx
+/**
+ * File: App.jsx
+ * Path: /frontend/src
+ * Author: Saša Kojadinović
+ */
+import { ThemeProvider, CssBaseline, Container, AppBar, Toolbar, Button } from '@mui/material'
+import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
+import theme from './theme/muiTheme'
+import MonitorPage from './pages/MonitorPage'
+import AdminPage from './pages/AdminPage'
+
+export default function App() {
+  const location = useLocation();
+  const currentPath = location.pathname;
+  const displayValue = currentPath !== '/'? 'block': 'none';
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+
+        {/* <AppBar sx={{display: displayValue}}  position="static"> */}
+        <AppBar sx={{display: 'block'}}  position="static">
+          <Toolbar >
+            <Button color="inherit" component={Link} to="/">Огласни монитор</Button>
+            <Button color="inherit" component={Link} to="/admin">Админ</Button>
+          </Toolbar>
+        </AppBar>
+        <Container maxWidth={false}>
+          <Routes>
+            <Route path="/" element={<MonitorPage />} />
+            <Route path="/admin" element={<AdminPage />} />
+          </Routes>
+        </Container>
+
+    </ThemeProvider>
+  )
+}
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/api/axiosInstance.js
+/**
+ * File: axiosInstance.js
+ * Path: /frontend/src/api
+ * Author: Saša Kojadinović
+ */
+import axios from 'axios'
+
+const api = axios.create({
+  baseURL: 'http://localhost:3000/api',
+  headers: { 'Content-Type': 'application/json' }
+})
+
+export default api
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/api/bellApi.js
+/**
+ * File: bellApi.js
+ * Path: /frontend/src/api
+ * Author: Saša Kojadinović
+ */
+import api from "./axiosInstance";
+
+/**
+ * Gruba validacija #RRGGBB / #RRGGBBAA – vraća čist hex ili null.
+ */
+function normalizeHexColor(c) {
+  const s = String(c || "").trim();
+  if (/^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(s)) return s;
+  return null;
+}
+
+/**
+ * Normalizuje i grubo validira payload za šablon zvona.
+ * Prihvata { name, description?, color?, json_spec: { rings: [{ time:'HH:MM', label? }] } }
+ * i vraća istu strukturu sa očišćenim vrednostima.
+ */
+function normalizeTemplatePayload(p = {}) {
+  const ringsIn = Array.isArray(p?.json_spec?.rings) ? p.json_spec.rings : [];
+  const rings = ringsIn
+    .map((r) => ({
+      time: String(r?.time ?? "").slice(0, 5), // "HH:MM"
+      label: r?.label ? String(r.label) : "",
+    }))
+    .filter((r) => /^\d{2}:\d{2}$/.test(r.time));
+
+  const body = {
+    name: (p?.name ?? "").trim(),
+    description: p?.description ? String(p.description) : null,
+    json_spec: { rings },
+  };
+
+  const color = normalizeHexColor(p?.color);
+  if (color) body.color = color; // pošalji samo ako je validno; u suprotnom backend default ostaje
+
+  return body;
+}
+
+const bellApi = {
+  // -----------------------------
+  // Bell status
+  // -----------------------------
+  async getNext() {
+    try {
+      const { data } = await api.get("/bell/next");
+      return data; // { ts, label } | null
+    } catch {
+      return null;
+    }
+  },
+
+  async getToday() {
+    try {
+      const { data } = await api.get("/bell/today");
+      return data; // { date, is_holiday, json_spec } | null
+    } catch {
+      return null;
+    }
+  },
+
+  async testFire(durationMs) {
+    // Guard protiv NaN/negativnih i prekratkih pulseva
+    const safe = Math.max(100, Number(durationMs) || 0);
+    const { data } = await api.post("/bell/test-fire", { duration_ms: safe });
+    return data; // { ok: true }
+  },
+
+  // -----------------------------
+  // Templates CRUD (sa color)
+  // -----------------------------
+  async getTemplates() {
+    const { data } = await api.get("/bell-templates");
+    return data; // očekuje: [{ id, name, description, color, json_spec?, ... }]
+  },
+
+  async getTemplate(id) {
+    const { data } = await api.get(`/bell-templates/${id}`);
+    return data; // { id, name, description, color, json_spec, ... }
+  },
+
+  async createTemplate(payload) {
+    const body = normalizeTemplatePayload(payload);
+    const { data } = await api.post("/bell-templates", body);
+    return data; // { id }
+  },
+
+  async updateTemplate(id, payload) {
+    const body = normalizeTemplatePayload(payload);
+    const { data } = await api.put(`/bell-templates/${id}`, body);
+    return data; // { changed }
+  },
+
+  async deleteTemplate(id) {
+    const { data } = await api.delete(`/bell-templates/${id}`);
+    return data; // { deleted }
+  },
+
+  // -----------------------------
+  // Day schedule (prima {start,end} ili {from,to})
+  // -----------------------------
+  async getDaySchedule(range = {}) {
+    // Podržavamo obe forme, mapiramo na start/end
+    const start = range.start || range.from || null;
+    const end = range.end || range.to || null;
+
+    const params = {};
+    if (start) params.start = start; // 'YYYY-MM-DD'
+    if (end) params.end = end;       // 'YYYY-MM-DD'
+
+    const { data } = await api.get("/day-schedule", { params });
+    return data; // očekuje: [{ date, is_holiday, bell_template_id, template_name, template_color, ... }]
+  },
+
+  async putDay(date, payload) {
+    // payload: { bell_template_id?, is_holiday?, note? }
+    const { data } = await api.put(`/day-schedule/${date}`, payload);
+    return data; // { ok: true }
+  },
+};
+
+export default bellApi;
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/components/Admin/AdminAnnouncements.jsx
+/**
+ * File: AdminAnnouncements.jsx
+ * Path: /frontend/src/components/Admin
+ * Author: Saša Kojadinović
+ */
+
+import { useEffect, useState } from "react";
+import {
+    Box, Typography, Button, Stack, Chip, IconButton, Tooltip,
+    Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper
+} from "@mui/material";
+import {
+    Edit as EditIcon,
+    Delete as DeleteIcon,
+    Campaign as PushIcon,
+    ToggleOn as ActiveIcon,
+    ToggleOff as InactiveIcon,
+    Add as AddIcon,
+} from "@mui/icons-material";
+
+import api from "../../api/axiosInstance";
+import dayjs from "dayjs";
+import AnnouncementDialog from "./AnnouncementDialog";
+
+
+export default function AdminAnnouncements() {
+    const [items, setItems] = useState([]);
+    const [status, setStatus] = useState("all");
+
+    const [dialogOpen, setDialogOpen] = useState(false);
+    const [editData, setEditData] = useState(null);
+
+
+    const load = async () => {
+        try {
+            const res = await api.get("/announcements", { params: { status } });
+            setItems(res.data?.items || []);
+        } catch (e) {
+            console.error("Greška pri učitavanju obaveštenja", e);
+        }
+    };
+
+    useEffect(() => { load(); }, [status]);
+
+    const toggleActive = async (id, current) => {
+        await api.patch(`/announcements/${id}/toggle`, { is_active: !current });
+        load();
+    };
+
+    const deleteItem = async (id) => {
+        if (window.confirm("Да ли сигурно желиш да обришеш обавештење?")) {
+            await api.delete(`/announcements/${id}`);
+            load();
+        }
+    };
+
+    const pushNow = async (id) => {
+        await api.post(`/announcements/${id}/push`);
+        alert("Обавештење је послато на огласну таблу.");
+    };
+
+    return (
+        <Box >
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+                <Typography variant="h4">Обавештења</Typography>
+                <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setEditData(null); setDialogOpen(true); }}>
+                    Ново
+                </Button>
+
+            </Stack>
+
+            <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+                {["all", "active", "expired"].map((s) => (
+                    <Button
+                        key={s}
+                        variant={s === status ? "contained" : "outlined"}
+                        onClick={() => setStatus(s)}
+                    >
+                        {s === "all" ? "Сва" :
+                            s === "active" ? "Активна" :
+                                s === "scheduled" ? "На чекању" :
+                                    "Истекла"}
+                    </Button>
+                ))}
+            </Stack>
+
+            <TableContainer component={Paper}>
+                <Table size="small">
+                    <TableHead>
+                        <TableRow >
+                            <TableCell>Наслов</TableCell>
+                            <TableCell>Период</TableCell>
+                            <TableCell>Приоритет</TableCell>
+                            <TableCell>Активно</TableCell>
+                            <TableCell align="right">Опције</TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {items.map((a) => (
+                            <TableRow key={a.id}>
+                                <TableCell>{a.title}</TableCell>
+                                <TableCell>
+                                    {dayjs(a.start_ts).format("DD.MM.YYYY HH:mm")} –<br />
+                                    {dayjs(a.end_ts).format("DD.MM.YYYY HH:mm")}
+                                </TableCell>
+                                <TableCell>
+                                    <Chip
+                                        label={a.priority}
+                                        color={
+                                            a.priority === "URGENT" ? "error" :
+                                                a.priority === "HIGH" ? "warning" : "primary"
+                                        }
+                                        size="small"
+                                    />
+                                </TableCell>
+                                <TableCell>
+                                    {a.is_active ? <Chip label="Да" color="success" size="small" /> : "Не"}
+                                </TableCell>
+                                <TableCell align="right">
+                                    <Tooltip title="Измени">
+                                        <IconButton onClick={() => { setEditData(a); setDialogOpen(true); }}>
+                                            <EditIcon />
+                                        </IconButton>
+                                    </Tooltip>
+
+                                    <Tooltip title="Активирај/деактивирај">
+                                        <IconButton onClick={() => toggleActive(a.id, a.is_active)}>
+                                            {a.is_active ? <ActiveIcon /> : <InactiveIcon />}
+                                        </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Обриши">
+                                        <IconButton onClick={() => deleteItem(a.id)}><DeleteIcon /></IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Прикажи одмах">
+                                        <IconButton onClick={() => pushNow(a.id)}><PushIcon /></IconButton>
+                                    </Tooltip>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                        {!items.length && (
+                            <TableRow>
+                                <TableCell colSpan={5}>Нема обавештења.</TableCell>
+                            </TableRow>
+                        )}
+                    </TableBody>
+                </Table>
+            </TableContainer>
+            <AnnouncementDialog
+                open={dialogOpen}
+                onClose={() => setDialogOpen(false)}
+                initialData={editData}
+                onSaved={load}
+            />
+
+        </Box>
+    );
+}
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/components/Admin/AnnouncementDialog.jsx
+/**
+ * File: AnnouncementDialog.jsx
+ * Path: /frontend/src/components/Admin
+ * Author: Saša Kojadinović
+ */
+
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Stack,
+  Button,
+  MenuItem,
+  FormControlLabel,
+  Switch,
+} from "@mui/material";
+import dayjs from "dayjs";
+import { useEffect, useMemo, useState } from "react";
+import api from "../../api/axiosInstance";
+
+export default function AnnouncementDialog({ open, onClose, initialData = null, onSaved }) {
+  const isEdit = Boolean(initialData?.id);
+
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [priority, setPriority] = useState("NORMAL");
+  const [startTs, setStartTs] = useState("");
+  const [endTs, setEndTs] = useState("");
+  const [isActive, setIsActive] = useState(true);
+
+  useEffect(() => {
+    if (!open) return;
+    if (isEdit) {
+      setTitle(initialData.title || "");
+      setBody(initialData.body || "");
+      setPriority(initialData.priority || "NORMAL");
+      setStartTs(initialData.start_ts?.slice(0, 16) || "");
+      setEndTs(initialData.end_ts?.slice(0, 16) || "");
+      setIsActive(initialData.is_active ?? true);
+    } else {
+      setTitle("");
+      setBody("");
+      setPriority("NORMAL");
+      setStartTs(dayjs().format("YYYY-MM-DDTHH:mm"));
+      setEndTs(dayjs().add(1, "day").format("YYYY-MM-DDTHH:mm"));
+      setIsActive(true);
+    }
+  }, [open, isEdit, initialData]);
+
+  const valid = useMemo(() => {
+    return (
+      title.trim().length > 0 &&
+      startTs &&
+      endTs &&
+      dayjs(endTs).isAfter(dayjs(startTs))
+    );
+  }, [title, startTs, endTs]);
+
+  const handleSubmit = async () => {
+    const payload = {
+      title: title.trim(),
+      body: body.trim(),
+      priority,
+      start_ts: new Date(startTs).toISOString(),
+      end_ts: new Date(endTs).toISOString(),
+      is_active: isActive,
+    };
+
+    try {
+      if (isEdit) {
+        await api.put(`/announcements/${initialData.id}`, payload);
+      } else {
+        await api.post("/announcements", payload);
+      }
+      onSaved?.();
+      onClose();
+    } catch (e) {
+      console.error("Грешка при чувању:", e);
+      alert("Грешка при чувању.");
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>{isEdit ? "Измени обавештење" : "Ново обавештење"}</DialogTitle>
+      <DialogContent dividers>
+        <Stack spacing={2}>
+          <TextField
+            label="Наслов"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
+            fullWidth
+          />
+          <TextField
+            label="Текст (HTML дозвољен)"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            multiline
+            minRows={4}
+            fullWidth
+          />
+          <TextField
+            label="Приоритет"
+            select
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+            fullWidth
+          >
+            <MenuItem value="NORMAL">Нормално</MenuItem>
+            <MenuItem value="HIGH">Висок</MenuItem>
+            <MenuItem value="URGENT">Хитно</MenuItem>
+          </TextField>
+
+          <TextField
+            label="Почетак приказа"
+            type="datetime-local"
+            value={startTs}
+            onChange={(e) => setStartTs(e.target.value)}
+            fullWidth
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            label="Крај приказа"
+            type="datetime-local"
+            value={endTs}
+            onChange={(e) => setEndTs(e.target.value)}
+            fullWidth
+            InputLabelProps={{ shrink: true }}
+          />
+
+          <FormControlLabel
+            control={<Switch checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />}
+            label="Активно"
+          />
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Откажи</Button>
+        <Button variant="contained" onClick={handleSubmit} disabled={!valid}>
+          Сачувај
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/components/Admin/BellTemplateDialog.jsx
+/**
+ * File: BellTemplateDialog.jsx
+ * Path: /frontend/src/components/Admin
+ * Author: Saša Kojadinović
+ */
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  Dialog, DialogTitle, DialogContent, DialogActions, Button,
+  TextField, Stack, Typography, Divider, IconButton, Tooltip, Box,
+  Select, MenuItem
+} from "@mui/material";
+import SortIcon from "@mui/icons-material/Sort";
+import AddIcon from "@mui/icons-material/Add";
+import bellApi from "../../api/bellApi";
+import RingRow from "./RingRow";
+import { TimePicker } from "@mui/x-date-pickers";
+import dayjs from "dayjs";
+import customParseFormat from "dayjs/plugin/customParseFormat";
+dayjs.extend(customParseFormat);
+
+// utili
+function parseSpec(json_spec) {
+  try {
+    const spec = typeof json_spec === "string" ? JSON.parse(json_spec) : json_spec;
+    return Array.isArray(spec?.rings) ? spec.rings : [];
+  } catch {
+    return [];
+  }
+}
+function isValidTime(hhmm) { return /^\d{2}:\d{2}$/.test(hhmm || ""); }
+function isHexColor(v) { return /^#([0-9a-fA-F]{6})$/.test(v || ""); }
+
+function addMinutesToHHMM(hhmm, minutes) {
+  const t = dayjs(hhmm, "HH:mm").add(minutes, "minute");
+  return t.format("HH:mm");
+}
+
+export default function BellTemplateDialog({ open, onClose, initialData, onSaved, onError }) {
+  const isEdit = Boolean(initialData?.id);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [rings, setRings] = useState([]);
+  const [color, setColor] = useState("#1976d2");
+  const [intervalMin, setIntervalMin] = useState(5);
+
+  useEffect(() => {
+    if (!open) return;
+    if (isEdit) {
+      setName(initialData.name || "");
+      setDescription(initialData.description || "");
+      setRings(parseSpec(initialData.json_spec));
+      setColor(initialData.color || "#1976d2");
+    } else {
+      setName("");
+      setDescription("");
+      setRings([
+        { time: "08:00", label: "Почетак 1. часа" },
+        { time: "08:45", label: "Крај 1. часа" },
+      ]);
+      setColor("#1976d2");
+    }
+  }, [open, isEdit, initialData]);
+
+  const valid = useMemo(() => {
+    if (!name.trim()) return false;
+    if (!isHexColor(color)) return false;
+    if (!Array.isArray(rings) || rings.length < 1) return false;
+    for (const r of rings) if (!isValidTime(r.time)) return false;
+    return true;
+  }, [name, rings, color]);
+
+  const sortedRings = useMemo(() => {
+    const copy = [...rings];
+    copy.sort((a, b) => a.time.localeCompare(b.time));
+    return copy;
+  }, [rings]);
+
+  const addRing = () => setRings((arr) => [...arr, { time: "08:00", label: "" }]);
+  const sortRings = () => setRings(sortedRings);
+
+  const addRingByInterval = () => {
+    if (!Array.isArray(rings) || rings.length === 0) return;
+    const last = sortedRings[sortedRings.length - 1];
+    const nextTime = addMinutesToHHMM(last.time, intervalMin);
+    const isDup = rings.some(r => r.time === nextTime);
+    const crossesDay = dayjs(nextTime, "HH:mm").isBefore(dayjs(last.time, "HH:mm"));
+
+    if (crossesDay) {
+      onError?.("Следеће звоно би пало у наредни дан.");
+      return;
+    }
+    if (isDup) {
+      onError?.("Звоно за то време већ постоји.");
+      return;
+    }
+
+    setRings(arr => [...arr, { time: nextTime, label: "" }]);
+  };
+
+  const save = async () => {
+    const payload = {
+      name: name.trim(),
+      description: description.trim() || null,
+      color,
+      json_spec: { rings: sortedRings.map((r) => ({ time: r.time, label: r.label || "" })) },
+    };
+    try {
+      if (isEdit) await bellApi.updateTemplate(initialData.id, payload);
+      else await bellApi.createTemplate(payload);
+      onSaved?.();
+    } catch {
+      onError?.("Неуспешно чување шаблона.");
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle sx={{ backgroundColor: "#efefef" }}>{isEdit ? "Уреди шаблон" : "Нови шаблон"}</DialogTitle>
+      <DialogContent dividers>
+        <Stack spacing={2}>
+          <TextField label="Назив*" value={name} onChange={(e) => setName(e.target.value)} helperText="Обавезно поље" />
+          <TextField label="Опис" value={description} onChange={(e) => setDescription(e.target.value)} multiline minRows={2} />
+
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <Typography variant="body1">Боја шaблона</Typography>
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              style={{ width: 48, height: 32, border: "none", background: "transparent", cursor: "pointer" }}
+              aria-label="Избор боје шaблона"
+            />
+            <Typography variant="body2" color="text.secondary">{color}</Typography>
+          </Box>
+
+          <Divider />
+
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Typography variant="h6" sx={{ flexGrow: 1 }}>Звона</Typography>
+            <Tooltip title="Сортирај по времену">
+              <IconButton onClick={sortRings}><SortIcon /></IconButton>
+            </Tooltip>
+            {rings.length === 0 ? (
+              <Button startIcon={<AddIcon />} onClick={addRing} variant="outlined">Додај звоно</Button>
+            ) : (
+              <>
+                <Select
+                  size="small"
+                  value={intervalMin}
+                  onChange={(e) => setIntervalMin(Number(e.target.value))}
+                  sx={{ minWidth: 90 }}
+                  aria-label="Интервал"
+                >
+                  {[5, 10, 15, 20, 30, 35, 45].map(v => (
+                    <MenuItem key={v} value={v}>{v} мин</MenuItem>
+                  ))}
+                </Select>
+                <Button variant="contained" onClick={addRingByInterval}>
+                  Додај по интервалу
+                </Button>
+              </>
+            )}
+
+          </Stack>
+
+          <Stack spacing={1}>
+            {rings.map((r, idx) => (
+              <RingRow
+                key={idx}
+                value={r}
+                onChange={(val) => {
+                  setRings((arr) => {
+                    const copy = [...arr];
+                    copy[idx] = val;
+                    return copy;
+                  });
+                }}
+                onDelete={() => setRings((arr) => arr.filter((_, i) => i !== idx))}
+                error={!isValidTime(r.time)}
+              />
+            ))}
+            {rings.length === 0 && <Typography color="text.secondary">Нема звона — додај бар једно.</Typography>}
+          </Stack>
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Откажи</Button>
+        <Button onClick={save} variant="contained" disabled={!valid}>Сачувај</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+// File: /var/www/html/pametna-skola2/frontend/src/components/Admin/BellTemplatesPage.jsx
+/**
+ * File: BellTemplatesPage.jsx
+ * Path: /frontend/src/components/Admin
+ * Author: Saša Kojadinović
+ */
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Typography,
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
+  Stack,
+  IconButton,
+  Snackbar,
+  Alert,
+  Tooltip,
+  CircularProgress,
+} from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
+import EditIcon from "@mui/icons-material/Edit";
+import DeleteIcon from "@mui/icons-material/Delete";
+import bellApi from "../../api/bellApi";
+import BellTemplateDialog from "./BellTemplateDialog";
+import ColorDot from "./ColorDot";
+
+function parseSpec(json_spec) {
+  try {
+    const spec = typeof json_spec === "string" ? JSON.parse(json_spec) : json_spec;
+    return Array.isArray(spec?.rings) ? spec.rings : [];
+  } catch {
+    return [];
+  }
+}
+
+export default function BellTemplatesPage() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editRow, setEditRow] = useState(null);
+  const [toast, setToast] = useState({ open: false, message: "", severity: "success" });
+
+  async function load() {
+    setLoading(true);
+    try {
+      const data = await bellApi.getTemplates();
+      setRows(Array.isArray(data) ? data : []);
+    } catch {
+      setToast({ open: true, message: "Грешка при учитавању.", severity: "error" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const table = useMemo(() => {
+    return rows.map((r) => {
+      const rings = parseSpec(r.json_spec);
+      return {
+        id: r.id,
+        name: r.name,
+        description: r.description || "",
+        color: r.color || "#1976d2",
+        ringsCount: rings.length,
+        updated_at: r.updated_at ? new Date(r.updated_at).toLocaleString("sr-RS") : "—",
+        raw: r,
+      };
+    });
+  }, [rows]);
+
+  const handleNew = () => {
+    setEditRow(null);
+    setDialogOpen(true);
+  };
+
+  const handleEdit = (row) => {
+    setEditRow(row.raw);
+    setDialogOpen(true);
+  };
+
+  const handleDelete = async (row) => {
+    if (!window.confirm(`Обриши шаблон „${row.name}”?`)) return;
+    try {
+      await bellApi.deleteTemplate(row.id);
+      setToast({ open: true, message: "Шаблон је обрисан.", severity: "success" });
+      load();
+    } catch {
+      setToast({ open: true, message: "Брисање није успело.", severity: "error" });
+    }
+  };
+
+  return (
+    <Box>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+        <Typography variant="h4">Шаблони звона</Typography>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={handleNew}>
+          Нови шаблон
+        </Button>
+      </Stack>
+
+      <Card>
+        <CardContent>
+          {loading ? (
+            <Stack alignItems="center" >
+              <CircularProgress />
+            </Stack>
+          ) : (
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Назив</TableCell>
+                  <TableCell>Опис</TableCell>
+                  <TableCell align="right"># звона</TableCell>
+                  <TableCell>Измењен</TableCell>
+                  <TableCell align="right">Акције</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {table.map((r) => (
+                  <TableRow key={r.id} hover>
+                    <TableCell>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        {/* kvadratić boje ispred naziva */}
+                        <ColorDot color={r.color} size={14} style={{ borderRadius: 4 }} />
+                        <span>{r.name}</span>
+                      </Stack>
+                    </TableCell>
+                    <TableCell>{r.description}</TableCell>
+                    <TableCell align="right">{r.ringsCount}</TableCell>
+                    <TableCell>{r.updated_at}</TableCell>
+                    <TableCell align="right">
+                      <Tooltip title="Уреди">
+                        <IconButton onClick={() => handleEdit(r)}>
+                          <EditIcon />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Обриши">
+                        <IconButton onClick={() => handleDelete(r)}>
+                          <DeleteIcon />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {table.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center">
+                      Нема шаблона. Кликни „Нови шаблон”.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <BellTemplateDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        initialData={editRow}
+        onSaved={() => {
+          setDialogOpen(false);
+          setToast({ open: true, message: "Сачувано.", severity: "success" });
+          load();
+        }}
+        onError={(msg) => setToast({ open: true, message: msg || "Грешка.", severity: "error" })}
+      />
+
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={3000}
+        onClose={() => setToast((t) => ({ ...t, open: false }))}
+      >
+        <Alert severity={toast.severity} variant="filled">
+          {toast.message}
+        </Alert>
+      </Snackbar>
+    </Box>
+  );
+}
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/components/Admin/ColorDot.jsx
+/**
+ * File: ColorDot.jsx
+ * Path: /frontend/src/components/Admin
+ * Author: Saša Kojadinović
+ */
+
+export default function ColorDot({ color = "#1976d2", size = 10, style }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        display: "inline-block",
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        backgroundColor: color,
+        marginRight: 6,
+        verticalAlign: "middle",
+        ...style,
+      }}
+    />
+  );
+}
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/components/Admin/DayScheduleCalendar.jsx
+/**
+ * File: DayScheduleCalendar.jsx
+ * Path: /frontend/src/components/Admin
+ * Author: Saša Kojadinović
+ */
+
+import { useEffect, useMemo, useState, useCallback } from "react";
+import {
+  Box, Card, CardContent, Typography, Stack, Button, Chip,
+  Dialog, DialogTitle, DialogContent, DialogActions,
+  Checkbox, FormControlLabel, Snackbar, Alert, Tooltip,
+  Grid, Divider
+} from "@mui/material";
+import { DateCalendar, PickersDay } from "@mui/x-date-pickers";
+import dayjs from "dayjs";
+import "dayjs/locale/sr";
+import bellApi from "../../api/bellApi";
+import TemplateSelect from "./TemplateSelect";
+
+dayjs.locale("sr");
+
+function fmtDate(d) { return dayjs(d).format("YYYY-MM-DD"); }
+function startEndForMonth(monthDayjs) {
+  const firstOfMonth = monthDayjs.startOf("month");
+  const start = firstOfMonth.startOf("week");
+  const end = firstOfMonth.endOf("month").endOf("week");
+  return { from: fmtDate(start), to: fmtDate(end) };
+}
+
+function DayRenderer(props) {
+  const { day, outsideCurrentMonth, onSelectToggle, meta } = props;
+  const ymd = fmtDate(day);
+  const row = meta.byDate.get(ymd);
+  const isSelected = meta.selected.has(ymd);
+  const isHoliday = Boolean(row?.is_holiday);
+  const hasTemplate = Boolean(row?.template_name);
+  const color = row?.template_color || "#1976d2";
+
+  return (
+    <Box sx={{ position: "relative" }}>
+
+      <PickersDay
+        {...props}
+        outsideCurrentMonth={outsideCurrentMonth}
+        onClick={(e) => { e.stopPropagation(); onSelectToggle(ymd, e); }}
+        selected={isSelected}
+        sx={{
+          ...(day.isSame(dayjs(), "day") && { border: (t) => `1px solid ${t.palette.primary.main}` }),
+          ...(isHoliday && {
+            bgcolor: (t) => (props.selected ? t.palette.error.light : t.palette.error.lighter),
+            "&:hover": { bgcolor: (t) => (props.selected ? t.palette.error.light : t.palette.error.lighter), opacity: 0.9 },
+          }),
+        }}
+      />
+      {isHoliday && (
+        <Chip
+          label="Н"
+          size="small"
+          color="error"
+          sx={{ position: "absolute", top: 2, right: 2, height: 18, fontSize: 11, minWidth: 0, px: 0.5 }}
+        />
+      )}
+      {hasTemplate && (
+        <Box
+          sx={{
+            position: "absolute",
+            bottom: 4,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            backgroundColor: color,
+          }}
+          title={row.template_name}
+        />
+      )}
+    </Box>
+  );
+}
+
+export default function DayScheduleCalendar() {
+  const [month, setMonth] = useState(dayjs());
+  const [{ from, to }, setRange] = useState(() => startEndForMonth(dayjs()));
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [selected, setSelected] = useState(new Set());
+
+  // Single-day dialog
+  const [editOpen, setEditOpen] = useState(false);
+  const [editDate, setEditDate] = useState(null);
+  const [editTemplateId, setEditTemplateId] = useState(null);
+  const [editHoliday, setEditHoliday] = useState(false);
+  const [editNote, setEditNote] = useState("");
+
+  // Bulk
+  const [bulkTemplateId, setBulkTemplateId] = useState(null);
+
+  const [toast, setToast] = useState({ open: false, message: "", severity: "success" });
+
+  const byDate = useMemo(() => {
+    const map = new Map();
+    for (const r of rows) map.set(r.date, r);
+    return map;
+  }, [rows]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await bellApi.getDaySchedule({ from, to });
+      setRows(Array.isArray(data) ? data : []);
+    } catch {
+      setRows([]);
+      setToast({ open: true, message: "Грешка при учитавању распореда.", severity: "error" });
+    } finally {
+      setLoading(false);
+    }
+  }, [from, to]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleMonthChange = (newMonth) => {
+    setMonth(newMonth);
+    setRange(startEndForMonth(newMonth));
+  };
+
+  const toggleSelect = (ymd, evt) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (evt?.shiftKey) {
+        const all = Array.from({ length: dayjs(to).diff(dayjs(from), "day") + 1 }, (_, i) =>
+          fmtDate(dayjs(from).add(i, "day"))
+        );
+        const idxClicked = all.indexOf(ymd);
+        const nearest = [...next]
+          .map((d) => all.indexOf(d))
+          .filter((i) => i >= 0)
+          .sort((a, b) => Math.abs(a - idxClicked) - Math.abs(b - idxClicked))[0];
+        if (nearest >= 0) {
+          const [a, b] = [nearest, idxClicked].sort((x, y) => x - y);
+          for (let i = a; i <= b; i++) next.add(all[i]);
+          return next;
+        }
+      }
+      if (next.has(ymd)) next.delete(ymd); else next.add(ymd);
+      return next;
+    });
+  };
+
+  const openEdit = (ymd) => {
+    const row = byDate.get(ymd);
+    setEditDate(ymd);
+    setEditTemplateId(row?.bell_template_id || null);
+    setEditHoliday(Boolean(row?.is_holiday));
+    setEditNote(row?.note || "");
+    setEditOpen(true);
+  };
+
+  const saveEdit = async () => {
+    try {
+      await bellApi.putDay(editDate, {
+        bell_template_id: editTemplateId,
+        is_holiday: editHoliday,
+        note: editNote || null,
+      });
+      setEditOpen(false);
+      setToast({ open: true, message: "Сачувано.", severity: "success" });
+      load();
+    } catch {
+      setToast({ open: true, message: "Неуспешно чување.", severity: "error" });
+    }
+  };
+
+  // Bulk akcije
+  const applyBulkTemplate = async () => {
+    if (!bulkTemplateId || selected.size === 0) return;
+    try {
+      await Promise.all([...selected].map((d) =>
+        bellApi.putDay(d, { bell_template_id: bulkTemplateId, is_holiday: false })
+      ));
+      setToast({ open: true, message: "Шаблон примењен.", severity: "success" });
+      load();
+    } catch {
+      setToast({ open: true, message: "Грешка при примени шаблона.", severity: "error" });
+    }
+  };
+  const applyBulkHoliday = async () => {
+    if (selected.size === 0) return;
+    try {
+      await Promise.all([...selected].map((d) =>
+        bellApi.putDay(d, { bell_template_id: null, is_holiday: true })
+      ));
+      setToast({ open: true, message: "Означено као нерадни дан.", severity: "success" });
+      load();
+    } catch {
+      setToast({ open: true, message: "Грешка при означавању.", severity: "error" });
+    }
+  };
+  const clearBulk = () => setSelected(new Set());
+
+  const meta = useMemo(() => ({ byDate, selected }), [byDate, selected]);
+
+  return (
+    <Box>
+      <Typography variant="h4" sx={{ mb: 2 }}>Календар распореда</Typography>
+
+      <Card>
+        <CardContent>         
+
+          {/* GRID LAYOUT: Лево календар, десно sidebar */}
+          <Grid spacing={2}>
+            <Grid item xs={12} md={8}>
+
+              <Card variant="outlined">
+                <CardContent>
+                  <DateCalendar
+                    value={month}
+                    onChange={() => { }}
+                    onMonthChange={handleMonthChange}
+                    reduceAnimations
+                    disableHighlightToday={false}
+                    slots={{
+                      day: (p) => (
+                        <DayRenderer
+                          {...p}
+                          onSelectToggle={(ymd, e) => {
+                            if (e?.metaKey || e?.ctrlKey || e?.shiftKey) toggleSelect(ymd, e);
+                            else { toggleSelect(ymd, e); openEdit(ymd); }
+                          }}
+                          meta={meta}
+                        />
+                      ),
+                    }}
+                  />
+
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
+                    <Chip size="small" variant="outlined" label="Боја тачке = шаблон" />
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid item xs={12} md={4}>
+              <Card variant="outlined" sx={{ position: { md: 'sticky' }, top: { md: 16 } }}>
+                <CardContent>
+                  <Typography variant="subtitle1" sx={{ mb: 1 }}>Масовне акције <Chip label={`Изабрано: ${selected.size}`} size="small" /></Typography>
+
+
+                  <Typography color="text.secondary">{loading ? "Учитавање…" : ""}</Typography>
+
+                  <Stack spacing={1.5}>
+                    <TemplateSelect
+                      value={bulkTemplateId}
+                      onChange={setBulkTemplateId}
+                      label="Шаблон за примену"
+                      fullWidth
+                      sx={{ minWidth: { xs: '100%', sm: 320 } }}
+                    />
+
+                    <Tooltip title="Примени шаблон на изабране дане">
+                      <span>
+                        <Button
+                          variant="contained"
+                          disabled={selected.size === 0}
+                          onClick={applyBulkTemplate}
+                          fullWidth
+                        >
+                          Примени шаблон ({selected.size})
+                        </Button>
+                      </span>
+                    </Tooltip>
+
+                    <Button onClick={clearBulk} disabled={selected.size === 0} fullWidth>
+                      Очисти избор
+                    </Button>
+
+                    <Divider />
+
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        </CardContent>
+
+        {/* Single-day dialog */}
+        <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Подешавање дана — {editDate}</DialogTitle>
+          <DialogContent dividers>
+            <Stack spacing={2}>
+              <TemplateSelect value={editTemplateId} onChange={setEditTemplateId} label="Шаблон звона" fullWidth />
+              <textarea
+                placeholder="Напомена (опционо)"
+                value={editNote}
+                onChange={(e) => setEditNote(e.target.value)}
+                style={{ width: "100%", minHeight: 80, padding: 8, borderRadius: 8, border: "1px solid var(--mui-palette-divider)" }}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setEditOpen(false)}>Откажи</Button>
+            <Button onClick={saveEdit} variant="contained">Сачувај</Button>
+          </DialogActions>
+        </Dialog>
+
+        <Snackbar open={toast.open} autoHideDuration={3000} onClose={() => setToast((t) => ({ ...t, open: false }))}>
+          <Alert severity={toast.severity} variant="filled">{toast.message}</Alert>
+        </Snackbar>
+      </Card>
+    </Box>
+  );
+}
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/components/Admin/RingRow.jsx
+/**
+ * File: RingRow.jsx
+ * Path: /frontend/src/components/Admin
+ * Author: Saša Kojadinović
+ */
+
+import { Stack, TextField, IconButton, Tooltip } from "@mui/material";
+import DeleteIcon from "@mui/icons-material/Delete";
+import { TimePicker } from "@mui/x-date-pickers";
+import dayjs from "dayjs";
+import customParseFormat from "dayjs/plugin/customParseFormat";
+dayjs.extend(customParseFormat);
+
+// "HH:MM" -> Dayjs | null
+function hhmmToDayjs(hhmm) {
+  if (!/^\d{2}:\d{2}$/.test(hhmm || "")) return null;
+  const [h, m] = hhmm.split(":").map(Number);
+  return dayjs().hour(h).minute(m).second(0).millisecond(0);
+}
+
+export default function RingRow({ value, onChange, onDelete, error }) {
+  const { time = "", label = "" } = value || {};
+  const timeObj = hhmmToDayjs(time);
+
+  return (
+    <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems="center">
+      <TimePicker
+        label="Време"
+        ampm={false}                 // ⬅️ forsira 24h
+        format="HH:mm"               // ⬅️ prikaz i parsing
+        views={["hours", "minutes"]}
+        minutesStep={1}
+        value={timeObj}
+        onChange={(val) => {
+          const next = val && val.isValid() ? val.format("HH:mm") : "";
+          onChange?.({ ...value, time: next });
+        }}
+        // Stil i error na ugrađenom TextField-u:
+        slotProps={{
+          textField: {
+            sx: { width: 160 },
+            error: Boolean(error),
+            helperText: error ? "Формат HH:MM" : " ",
+            InputLabelProps: { shrink: true },
+          },
+        }}
+      />
+
+      <TextField
+       sx={{bottom:'11px'}}
+        label="Опис"
+        value={label}
+        onChange={(e) => onChange?.({ ...value, label: e.target.value })}
+        fullWidth
+      />
+
+      <Tooltip title="Обриши звоно">
+        <IconButton  onClick={onDelete}>
+          <DeleteIcon />
+        </IconButton>
+      </Tooltip>
+    </Stack>
+  );
+}
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/components/Admin/TemplateSelect.jsx
+/**
+ * File: TemplateSelect.jsx
+ * Path: /frontend/src/components/Admin
+ * Author: Saša Kojadinović
+ */
+
+import { useEffect, useMemo, useState } from "react";
+import { Autocomplete, TextField, CircularProgress, Box } from "@mui/material";
+import bellApi from "../../api/bellApi";
+import ColorDot from "./ColorDot";
+
+export default function TemplateSelect({ value, onChange, label = "Шаблон" }) {
+  const [loading, setLoading] = useState(true);
+  const [templates, setTemplates] = useState([]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const data = await bellApi.getTemplates();
+        if (mounted) setTemplates(Array.isArray(data) ? data : []);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  const selected = useMemo(
+    () => templates.find((t) => t.id === value) || null,
+    [templates, value]
+  );
+  console.log(templates);
+  return (
+    <Autocomplete
+      options={templates}
+      getOptionLabel={(o) => o?.name || ""}
+      value={selected}
+      onChange={(_, opt) => onChange?.(opt ? opt.id : null)}
+      loading={loading}
+      renderInput={(params) => (
+        <TextField
+        variant="standard"
+        sx={{mb:1}}
+          {...params}
+          label={label}
+          InputProps={{
+            ...params.InputProps,
+            endAdornment: (
+              <>
+                {loading ? <CircularProgress size={18} /> : null}
+                {params.InputProps.endAdornment}
+              </>
+            ),
+          }}
+        />
+      )}
+      renderOption={(props, option) => (
+        <Box component="li" {...props}>
+          <ColorDot color={option.color || "#1976d2"} />
+          {option.name}
+        </Box>
+      )}
+      isOptionEqualToValue={(a, b) => a?.id === b?.id}
+    />
+  );
+}
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/components/DisplayBoard/AnnouncementBoard.jsx
+
+/**
+ * File: CarouselAnnouncementBoard.jsx
+ * Path: /frontend/src/components/DisplayBoard
+ * Author: Saša Kojadinović
+ */
+
+import { useEffect, useMemo, useState } from "react";
+import { Typography, Box, Alert, Fade } from "@mui/material";
+import DOMPurify from "dompurify";
+
+const priorityAccent = {
+  NORMAL: "info.main",
+  HIGH: "warning.main",
+  URGENT: "error.main",
+};
+
+export default function CarouselAnnouncementBoard({ items = [], override = null }) {
+  const [index, setIndex] = useState(0);
+  const [fadeIn, setFadeIn] = useState(true);
+
+  const visibleItem = useMemo(() => {
+    if (!items.length) return null;
+    return items[index % items.length];
+  }, [items, index]);
+
+  // Dinamičko trajanje slajda prema dužini teksta
+  const currentDuration = useMemo(() => {
+    if (!visibleItem) return 10000;
+    const textLen = (visibleItem.title?.length || 0) + (visibleItem.body?.length || 0);
+    const extra = Math.min(12000, Math.ceil(textLen / 90) * 1000); // +1s na ~90 karaktera
+    return 8000 + extra; // 8s baza
+  }, [visibleItem]);
+
+  // Automatska rotacija — pauziraj kada postoji override
+  useEffect(() => {
+    if (!items.length || override) return;
+    const id = setInterval(() => {
+      setFadeIn(false);
+      setTimeout(() => {
+        setIndex((i) => (i + 1) % items.length);
+        setFadeIn(true);
+      }, 350);
+    }, currentDuration);
+    return () => clearInterval(id);
+  }, [items, override, currentDuration]);
+
+  if (!items.length && !override) return null;
+
+  return (
+    <Box sx={{ width: "100%" }}>
+      {/* Push обавештење (override) */}
+      <Fade in={Boolean(override)} mountOnEnter unmountOnExit>
+        <Alert
+          severity="info"
+          icon={false}
+          sx={{
+            fontSize: "clamp(20px, 3.6vw, 42px)",
+            fontWeight: 800,
+            px: 2,
+            py: 1.5,
+            borderLeft: 0,
+            bgcolor: "action.hover",
+          }}
+        >
+          📢 {override?.title ? `${override.title}: ` : ""}
+          <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(override?.body || "") }} />
+        </Alert>
+      </Fade>
+
+      {/* Carousel prikaz — radi само кад нема override */}
+      {!override && visibleItem && (
+        <Fade in={fadeIn} timeout={400}>
+          <Box
+            key={visibleItem.id}
+            sx={{
+              px: 2,
+              py: 1.5,
+              borderLeft: (t) => `8px solid ${t.palette[priorityAccentKey(visibleItem.priority)].main}`,
+              bgcolor: "transparent",
+              minHeight: 140,
+            }}
+          >
+            <Typography variant="h2" sx={{ fontSize: "clamp(24px, 4.8vw, 56px)", fontWeight: 800, mb: 0.5 }}>
+              {visibleItem.title}
+            </Typography>
+            {visibleItem.body && (
+              <Typography
+                component="div"
+                sx={{ fontSize: "clamp(16px, 2.6vw, 28px)", lineHeight: 1.25, opacity: 0.95 }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(visibleItem.body) }}
+              />
+            )}
+
+            {/* Page dots */}
+            {items.length > 1 && (
+              <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
+                {items.map((_, i) => (
+                  <Box
+                    key={i}
+                    sx={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: "50%",
+                      opacity: i === index ? 1 : 0.35,
+                      bgcolor: (t) => t.palette[priorityAccentKey(visibleItem.priority)].main,
+                    }}
+                  />
+                ))}
+              </Box>
+            )}
+          </Box>
+        </Fade>
+      )}
+    </Box>
+  );
+}
+
+function priorityAccentKey(priority) {
+  if (priority === "URGENT") return "error";
+  if (priority === "HIGH") return "warning";
+  return "info";
+}
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/components/DisplayBoard/CarouselAnnouncementBoard.jsx
+/**
+ * File: CarouselAnnouncementBoard.jsx
+ * Path: /frontend/src/components/DisplayBoard
+ * Author: Saša Kojadinović
+ */
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  Card,
+  CardContent,
+  Typography,
+  Box,
+  Alert,
+  Fade,
+} from "@mui/material";
+import DOMPurify from "dompurify";
+
+const priorityColor = {
+  NORMAL: "primary",
+  HIGH: "warning",
+  URGENT: "error",
+};
+
+export default function CarouselAnnouncementBoard({ items = [], override = null }) {
+  const [index, setIndex] = useState(0);
+  const [fadeIn, setFadeIn] = useState(true);
+
+  const visibleItem = useMemo(() => {
+    if (!items.length) return null;
+    return items[index % items.length];
+  }, [items, index]);
+
+  // Automatska rotacija — pauziraj kada postoji override
+  useEffect(() => {
+    if (!items.length || override) return;
+
+    const interval = setInterval(() => {
+      setFadeIn(false);
+      setTimeout(() => {
+        setIndex((i) => (i + 1) % items.length);
+        setFadeIn(true);
+      }, 400);
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [items, override]);
+
+  if (!items.length && !override) return null;
+
+  return (
+    <Box sx={{ mb: 3, minHeight: 220}}>
+      {/* Push obaveštenje (override) — prikazuje se samo dok roditelj prosleđuje prop */}
+      <Fade in={Boolean(override)} mountOnEnter unmountOnExit>
+        <Alert
+          severity="info"
+          sx={{
+            mb: 2,
+            fontSize: 30,
+            fontWeight: "bold",
+            borderLeft: "6px solid",
+            borderColor: "info.main",
+          }}
+        >
+          📢 Хитно обавештење:  {override?.body}
+        </Alert>
+      </Fade>
+
+      {/* Carousel prikaz — radi samo kad nema override */}
+      {!override && visibleItem && (
+        <Fade in={fadeIn} timeout={500}>
+          <Box>
+            <Card
+              key={visibleItem.id}
+              sx={{
+                borderTop: `6px solid`,
+                borderColor: `${priorityColor[visibleItem.priority] || "info"}.main`,
+                minHeight: 180,
+                backgroundColor: "#efefef" 
+              }}
+            >
+              <CardContent>
+                <Typography variant="h3" gutterBottom>
+                  {visibleItem.title}
+                </Typography>
+                {visibleItem.body && (
+                  <Typography
+                    variant="p"
+                    component="div"
+                    dangerouslySetInnerHTML={{
+                      __html: DOMPurify.sanitize(visibleItem.body),
+                    }}
+                  />
+                )}
+              </CardContent>
+            </Card>
+
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              align="center"
+              sx={{ mt: 1 }}
+            >
+              Обавештење {index + 1} од {items.length}
+            </Typography>
+          </Box>
+        </Fade>
+      )}
+    </Box>
+  );
+}
+
+
+// File: /var/www/html/pametna-skola2/frontend/src/components/DisplayBoard/DisplayBoard.jsx
+/**
+ * File: DisplayBoard.jsx
+ * Path: /frontend/src/components/DisplayBoard
+ * Author: Saša Kojadinović
+ */
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { io } from "socket.io-client";
+import {
+  Box,
+  Typography,
+  Stack,
+  Chip,
+  IconButton,
+  Tooltip,
+  CircularProgress,
+} from "@mui/material";
+import VolumeUpIcon from "@mui/icons-material/VolumeUp";
+import VolumeOffIcon from "@mui/icons-material/VolumeOff";
+import CloudDoneIcon from "@mui/icons-material/CloudDone";
+import CloudOffIcon from "@mui/icons-material/CloudOff";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import bellApi from "../../api/bellApi";
+import CarouselAnnouncementBoard from "./CarouselAnnouncementBoard";
+import alertSound from "../../assets/sounds/alert-gentle.mp3";
+import {
+  buildRings,
+  buildSegments,
+  formatClock,
+  formatMS,
+} from "../../utils/bell";
+import api from "../../api/axiosInstance"; // ✅ Dodato
+
+// =====================
+// Top bar (сат + статуси)
+// =====================
+function TopBar({ nowTick, connected, audioReady, onUnlock, onSoftRefresh }) {
+  const d = new Date(nowTick);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  const days = [
+    "Недеља",
+    "Понедељак",
+    "Уторак",
+    "Среда",
+    "Четвртак",
+    "Петак",
+    "Субота",
+  ];
+  return (
+    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 3, py: 1.5, minHeight: 72 }}>
+      <Stack direction="row" alignItems="baseline" spacing={2}>
+        <Typography component="div" sx={{ fontWeight: 800, lineHeight: 1, fontSize: "clamp(28px, 5vw, 64px)" }}>
+          {hh}:{mm}
+          <Typography component="span" sx={{ fontSize: "0.5em", ml: 1, opacity: 0.7 }}>{ss}</Typography>
+        </Typography>
+        <Typography component="div" sx={{ fontSize: "clamp(14px, 1.6vw, 22px)", opacity: 0.8 }}>
+          {days[d.getDay()]} · {String(d.getDate()).padStart(2, "0")}.
+          {String(d.getMonth() + 1).padStart(2, "0")}.
+          {d.getFullYear()}.
+        </Typography>
+      </Stack>
+      <Stack direction="row" alignItems="center" spacing={1.5}>
+        <Tooltip title={connected ? "Онлајн" : "Нема везе"}>
+          <Box>{connected ? <CloudDoneIcon fontSize="large" /> : <CloudOffIcon color="error" fontSize="large" />}</Box>
+        </Tooltip>
+        <Tooltip title={audioReady ? "Звук укључен" : "Звук је блокиран — омогући"}>
+          <IconButton onClick={onUnlock} size="large">
+            {audioReady ? <VolumeUpIcon /> : <VolumeOffIcon color="warning" />}
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Освежи податке">
+          <IconButton onClick={onSoftRefresh} size="large">
+            <RefreshIcon />
+          </IconButton>
+        </Tooltip>
+      </Stack>
+    </Stack>
+  );
+}
+
+// =====================
+// Hook: measure available space of a container
+// =====================
+function useMeasure() {
+  const ref = useRef(null);
+  const [rect, setRect] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries[0].contentRect;
+      setRect({ w: cr.width, h: cr.height });
+    });
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, rect];
+}
+
+// =====================
+// Gigantic circular timer sized by measured box
+// =====================
+function HeroTimer({ startTs, endTs, now, accentColor = "primary", boxSize }) {
+  if (!startTs || !endTs || !boxSize) return null;
+  const start = startTs.getTime();
+  const end = endTs.getTime();
+  const total = Math.max(0, end - start);
+  const elapsed = Math.min(Math.max(0, now - start), total);
+  const remaining = Math.max(0, end - now);
+  const value = total > 0 ? Math.round((elapsed / total) * 100) : 0;
+
+  const totalSeconds = Math.floor(remaining / 1000);
+  const hh = Math.floor(totalSeconds / 3600);
+  const mm = Math.floor((totalSeconds % 3600) / 60);
+  const ss = totalSeconds % 60;
+  const timeStr = (hh > 0 ? String(hh).padStart(2, "0") + ":" : "") +
+    String(mm).padStart(2, "0") + ":" + String(ss).padStart(2, "0");
+
+  const thickness = Math.max(6, Math.round(boxSize * 0.04));
+
+  return (
+    <Box sx={{ position: "relative", width: boxSize, height: boxSize }}>
+      <CircularProgress variant="determinate" value={100} thickness={Math.max(4, Math.round(thickness * 0.6))} size={boxSize} sx={{ color: "action.hover", position: "absolute", inset: 0 }} />
+      <CircularProgress variant="determinate" value={value} thickness={thickness} size={boxSize} color={accentColor} sx={{ position: "absolute", inset: 0 }} />
+      <Box sx={{ position: "absolute", inset: thickness + 8, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
+        <Typography sx={{ fontWeight: 800, fontSize: Math.max(56, Math.round(boxSize * 0.22)), lineHeight: 1 }}>{timeStr}</Typography>
+      </Box>
+    </Box>
+  );
+}
+
+function MiddleCircle({ nowTick, current }) {
+  const [ref, rect] = useMeasure();
+  const box = Math.max(120, Math.min(rect.w, rect.h));
+  return (
+    <Box ref={ref} sx={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {current && box > 0 ? (
+        <HeroTimer
+          startTs={current.startTs}
+          endTs={current.endTs}
+          now={nowTick}
+          accentColor={current?.type === 'ЧАС' ? 'error' : 'success'}
+          boxSize={Math.floor(box * 0.9)}
+        />
+      ) : (
+        <Typography sx={{ fontWeight: 800, fontSize: 'clamp(56px, 12vw, 200px)' }}>—:—</Typography>
+      )}
+    </Box>
+  );
+}
+
+export default function DisplayBoard() {
+  const [today, setToday] = useState(null);
+  const [nextBell, setNextBell] = useState(null);
+  const [nowTick, setNowTick] = useState(Date.now());
+  const [announcements, setAnnouncements] = useState([]);
+  const [overrideAnnouncement, setOverrideAnnouncement] = useState(null);
+  const [connected, setConnected] = useState(false);
+  const [audioReady, setAudioReady] = useState(false);
+  const socketRef = useRef(null);
+  const audioRef = useRef(null);
+
+  // Audio init & unlock
+  useEffect(() => {
+    const audio = new Audio(alertSound);
+    audio.volume = 1.0;
+    audioRef.current = audio;
+    const warm = new Audio(alertSound);
+    warm.volume = 0;
+    warm.play().then(() => { warm.pause(); warm.currentTime = 0; }).catch(() => { });
+    const tryUnlockOnce = async () => {
+      try { await audio.play(); audio.pause(); audio.currentTime = 0; setAudioReady(true); window.removeEventListener("pointerdown", tryUnlockOnce); window.removeEventListener("keydown", tryUnlockOnce); } catch { }
+    };
+    window.addEventListener("pointerdown", tryUnlockOnce, { once: true });
+    window.addEventListener("keydown", tryUnlockOnce, { once: true });
+    return () => { window.removeEventListener("pointerdown", tryUnlockOnce); window.removeEventListener("keydown", tryUnlockOnce); };
+  }, []);
+
+  const unlockAudio = async () => {
+    if (!audioRef.current) return;
+    try { await audioRef.current.play(); audioRef.current.pause(); audioRef.current.currentTime = 0; setAudioReady(true); } catch (e) { console.warn('Audio unlock failed:', e); }
+  };
+  const playAlertSound = () => {
+    if (!audioRef.current || !audioReady) return;
+    try { audioRef.current.pause(); audioRef.current.currentTime = 0; audioRef.current.play().catch(() => { }); } catch { }
+  };
+
+  // ✅ API fetch za aktivna obaveštenja
+  const fetchActiveAnnouncements = async () => {
+    try {
+      const res = await api.get("/announcements/active");
+      setAnnouncements(res.data.items || []);
+    } catch (e) {
+      console.warn("Грешка при учитавању обавештења", e);
+    }
+  };
+  useEffect(() => { fetchActiveAnnouncements(); }, []);
+
+  const softRefresh = async () => {
+    const [t, n] = await Promise.all([bellApi.getToday(), bellApi.getNext()]);
+    setToday(t);
+    setNextBell(n);
+    fetchActiveAnnouncements();
+  };
+  useEffect(() => { softRefresh(); }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Socket
+  useEffect(() => {
+    const url = import.meta.env.VITE_WS_BASE || "http://localhost:3000";
+    const s = io(url, { transports: ["websocket"] });
+    socketRef.current = s;
+    const refetchActive = () => fetchActiveAnnouncements();
+    s.on("connect", () => setConnected(true));
+    s.on("disconnect", () => setConnected(false));
+    s.on("bell:next", (payload) => setNextBell(payload));
+    s.on("announcement:created", refetchActive);
+    s.on("announcement:updated", refetchActive);
+    s.on("announcement:deleted", refetchActive);
+    s.on("announcement:push", (data) => {
+      setOverrideAnnouncement(data);
+      playAlertSound();
+      setTimeout(() => setOverrideAnnouncement(null), 60000);
+    });
+    return () => { s.disconnect(); };
+  }, [audioReady]);
+
+  // Derived timings
+  const rings = useMemo(() => buildRings(today?.json_spec), [today]);
+  const segments = useMemo(() => buildSegments(rings), [rings]);
+  const current = useMemo(() => {
+    const now = new Date(nowTick);
+    for (const seg of segments) { if (now >= seg.startTs && now < seg.endTs) return seg; }
+    return null;
+  }, [segments, nowTick]);
+
+  const nextTs = nextBell?.ts ? new Date(nextBell.ts) : null;
+  const countdownMs = useMemo(() => (nextTs ? nextTs.getTime() - nowTick : 0), [nextTs, nowTick]);
+  const isHoliday = Boolean(today?.is_holiday);
+
+  return (
+    <Box sx={{ height: "100dvh", display: "flex", flexDirection: "column", bgcolor: "background.default", color: "text.primary", overflow: "hidden" }}>
+      <TopBar nowTick={nowTick} connected={connected} audioReady={audioReady} onUnlock={unlockAudio} onSoftRefresh={softRefresh} />
+
+      {/* Announcements (does not shrink main area) */}
+      <Box sx={{ flexShrink: 0 }}>
+        <CarouselAnnouncementBoard items={announcements} override={overrideAnnouncement} />
+      </Box>
+
+      {/* Main content */}
+      <Box sx={{ flex: 1, minHeight: 0, px: 3, pb: 3, display: "flex", alignItems: "stretch", justifyContent: "center" }}>
+        {isHoliday ? (
+          <Typography sx={{ fontSize: "clamp(40px, 8vw, 120px)", fontWeight: 800, textAlign: "center" }}>Данас је нерадни дан</Typography>
+        ) : (
+          <Stack spacing={2} alignItems="center" sx={{ flex: 1, minHeight: 0, width: "100%" }}>
+            <Chip label={
+              current?.type === "ЧАС"
+                ? `${current?.periodNo ?? "?"}. ЧАС`
+                : current?.type || "Ван распореда"
+            } color={current?.type === "ЧАС" ? "error" : "success"} sx={{ fontSize: "clamp(14px, 2vw, 24px)", px: 2.5, py: 2, borderRadius: 3 }} />
+            <MiddleCircle nowTick={nowTick} current={current} />
+            <Typography sx={{ fontSize: "clamp(16px, 2vw, 24px)" }}>
+              Следеће звоно у {nextTs ? formatClock(nextTs) : "—"} {nextBell?.label && (<Box component="span" sx={{ textTransform: "lowercase", ml: 1 }}>({nextBell.label})</Box>)}
+            </Typography>
+            {!current && (
+              <>
+                <Typography sx={{ fontSize: "clamp(18px, 3vw, 32px)", opacity: 0.8 }}>
+                  {countdownMs > 0 ? "Следи следеће звоно" : "Нема активних интервала"}
+                </Typography>
+                <Typography sx={{ fontWeight: 800, fontSize: "clamp(56px, 12vw, 200px)" }}>
+                  {countdownMs > 0 ? formatMS(countdownMs) : "--:--"}
+                </Typography>
+              </>
+            )}
+          </Stack>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
+

@@ -110,7 +110,7 @@ export default function BellTemplatesPage() {
       <Card>
         <CardContent>
           {loading ? (
-            <Stack alignItems="center" sx={{ py: 4 }}>
+            <Stack alignItems="center" >
               <CircularProgress />
             </Stack>
           ) : (
