@@ -139,3 +139,9 @@ export const bellScheduler = {
         return state.nextRingTs ? { ts: state.nextRingTs, label: state.nextLabel } : null;
     }
 };
+// 📣 Funkcija za puštanje zvuka obaveštenja
+export function playNotificationSound() {
+  if (!config.enableAudioBackend) return;
+  const audioFile = path.join(__dirname, "../../audio/alert-gentle.mp3");
+  playBellSound(audioFile);
+}

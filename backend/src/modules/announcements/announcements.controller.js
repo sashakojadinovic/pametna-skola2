@@ -7,6 +7,7 @@
 import express from "express";
 import { DateTime } from "luxon";
 import { nowTZ } from "../../utils/time.js"; // koristi postojeći TZ (Europe/Belgrade)
+import { playNotificationSound } from "../bell/bell.service.js";
 
 /** Priority helper */
 const PRIORITY_ORDER_DESC_SQL = `
@@ -378,6 +379,7 @@ export function announcementsRouter(db, io) {
       );
       if (!row) return res.status(404).json({ message: "Nije pronađeno" });
       io.emit("announcement:push", row);
+      playNotificationSound(); 
       res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ message: "Greška servera", error: String(e) });
