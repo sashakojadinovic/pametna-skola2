@@ -10,6 +10,8 @@ import { dayScheduleRouter } from './modules/schedule/daySchedule.controller.js'
 import { announcementsRouter } from './modules/announcements/announcements.controller.js';
 import { playlistsRouter } from './modules/playlists/playlists.controller.js';
 import { tracksRouter } from './modules/playlists/tracks.controller.js';
+import { uploadRouter } from './modules/upload/upload.controller.js';
+
 
 export async function registerRoutes(app, db, io) {
   const api = express.Router();
@@ -19,5 +21,6 @@ export async function registerRoutes(app, db, io) {
   api.use('/announcements', announcementsRouter(db, io));
   api.use('/playlists', playlistsRouter(db));
   api.use('/playlists/:id/tracks', tracksRouter(db));
+    api.use('/upload', uploadRouter()); 
   app.use('/api', api);
 }

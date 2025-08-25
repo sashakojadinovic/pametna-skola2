@@ -5,6 +5,8 @@
  */
 
 import express from 'express';
+import fs from 'fs';
+import path from 'path';
 
 export function tracksRouter(db) {
   const router = express.Router({ mergeParams: true });
@@ -58,14 +60,23 @@ export function tracksRouter(db) {
 
   // Obrisi pesmu
   router.delete('/:trackId', async (req, res) => {
-    const { trackId } = req.params;
-    try {
-      await db.run(`DELETE FROM tracks WHERE id = ?`, [trackId]);
-      res.json({ ok: true });
-    } catch (e) {
-      res.status(500).json({ error: String(e) });
+  const { trackId } = req.params;
+  try {
+    const row = await db.get(`SELECT file_path FROM tracks WHERE id = ?`, [trackId]);
+    if (!row) return res.status(404).json({ error: 'Нумера није пронађена' });
+
+    // Pokušaj da obrišeš fajl ako postoji
+    const absolutePath = path.resolve(row.file_path);
+    if (fs.existsSync(absolutePath)) {
+      fs.unlinkSync(absolutePath);
     }
-  });
+
+    await db.run(`DELETE FROM tracks WHERE id = ?`, [trackId]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
 
   return router;
 }
