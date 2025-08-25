@@ -31,4 +31,8 @@ Thumbs.db
 
 # === Coverage/Testing ===
 coverage/
+
+# === Playlist/Files ===
+backend/uploads
 merge/
+
