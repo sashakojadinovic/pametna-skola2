@@ -9,7 +9,7 @@ import {
   Box, Card, CardContent, Typography, Stack, Button, Chip,
   Dialog, DialogTitle, DialogContent, DialogActions,
   Snackbar, Alert, Tooltip,
-  Grid, Divider
+  Grid, Divider, TextField, MenuItem
 } from "@mui/material";
 import { DateCalendar, PickersDay } from "@mui/x-date-pickers";
 import dayjs from "dayjs";
@@ -17,6 +17,7 @@ import "dayjs/locale/sr";
 import bellApi from "../../api/bellApi";
 import TemplateSelect from "./TemplateSelect";
 import RingNowButton from "./RingNowButton";
+import api from "../../api/axiosInstance"; // ⬅️ za /playlists
 
 dayjs.locale("sr");
 
@@ -94,9 +95,11 @@ export default function DayScheduleCalendar() {
   const [editTemplateId, setEditTemplateId] = useState(null);
   const [editHoliday, setEditHoliday] = useState(false);
   const [editNote, setEditNote] = useState("");
+  const [editPlaylistId, setEditPlaylistId] = useState(null); // ⬅️ NOVO
 
   // Bulk
   const [bulkTemplateId, setBulkTemplateId] = useState(null);
+  const [bulkPlaylistId, setBulkPlaylistId] = useState("");   // "" = bez muzike  ⬅️ NOVO
 
   const [toast, setToast] = useState({ open: false, message: "", severity: "success" });
 
@@ -155,13 +158,28 @@ export default function DayScheduleCalendar() {
     setEditTemplateId(row?.bell_template_id || null);
     setEditHoliday(Boolean(row?.is_holiday));
     setEditNote(row?.note || "");
+    setEditPlaylistId(row?.playlist_id || null); // ⬅️ NOVO
     setEditOpen(true);
   };
+
+  // playlists fetch
+  const [playlists, setPlaylists] = useState([]); // ⬅️ NOVO
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get("/playlists");
+        setPlaylists(Array.isArray(res.data) ? res.data : []);
+      } catch {
+        setPlaylists([]);
+      }
+    })();
+  }, []);
 
   const saveEdit = async () => {
     try {
       await bellApi.putDay(editDate, {
         bell_template_id: editTemplateId,
+        playlist_id: editPlaylistId, // ⬅️ NOVO
         is_holiday: editHoliday,
         note: editNote || null,
       });
@@ -186,18 +204,21 @@ export default function DayScheduleCalendar() {
       setToast({ open: true, message: "Грешка при примени шаблона.", severity: "error" });
     }
   };
-  const applyBulkHoliday = async () => {
+
+  const applyBulkPlaylist = async () => { // ⬅️ NOVO
     if (selected.size === 0) return;
     try {
+      const plId = bulkPlaylistId ? Number(bulkPlaylistId) : null;
       await Promise.all([...selected].map((d) =>
-        bellApi.putDay(d, { bell_template_id: null, is_holiday: true })
+        bellApi.putDay(d, { playlist_id: plId })
       ));
-      setToast({ open: true, message: "Означено као нерадни дан.", severity: "success" });
+      setToast({ open: true, message: "Плејлиста примењена.", severity: "success" });
       load();
     } catch {
-      setToast({ open: true, message: "Грешка при означавању.", severity: "error" });
+      setToast({ open: true, message: "Грешка при примени плејлисте.", severity: "error" });
     }
   };
+
   const clearBulk = () => setSelected(new Set());
 
   const meta = useMemo(() => ({ byDate, selected }), [byDate, selected]);
@@ -247,7 +268,6 @@ export default function DayScheduleCalendar() {
                 <CardContent>
                   <Typography variant="subtitle1" sx={{ mb: 1 }}>Масовне акције <Chip label={`Изабрано: ${selected.size}`} size="small" /></Typography>
 
-
                   <Typography color="text.secondary">{loading ? "Учитавање…" : ""}</Typography>
 
                   <Stack spacing={1.5}>
@@ -272,6 +292,34 @@ export default function DayScheduleCalendar() {
                       </span>
                     </Tooltip>
 
+                    {/* ⬇️ NOVO: Bulk playlist controls */}
+                    <TextField
+                      select
+                      fullWidth
+                      label="🎵 Плејлиста за примену"
+                      value={bulkPlaylistId}
+                      onChange={(e) => setBulkPlaylistId(e.target.value)}
+                      sx={{ mt: 1 }}
+                    >
+                      <MenuItem value="">(Без музике)</MenuItem>
+                      {playlists.map((pl) => (
+                        <MenuItem key={pl.id} value={String(pl.id)}>{pl.name}</MenuItem>
+                      ))}
+                    </TextField>
+
+                    <Tooltip title="Примени плејлисту на изабране дане (или 'Без музике')">
+                      <span>
+                        <Button
+                          variant="outlined"
+                          disabled={selected.size === 0}
+                          onClick={applyBulkPlaylist}
+                          fullWidth
+                        >
+                          Примени плејлисту ({selected.size})
+                        </Button>
+                      </span>
+                    </Tooltip>
+
                     <Button onClick={clearBulk} disabled={selected.size === 0} fullWidth>
                       Очисти избор
                     </Button>
@@ -292,6 +340,18 @@ export default function DayScheduleCalendar() {
           <DialogContent dividers>
             <Stack spacing={2}>
               <TemplateSelect value={editTemplateId} onChange={setEditTemplateId} label="Шаблон звона" fullWidth />
+              <TextField
+                select
+                fullWidth
+                label="🎵 Плејлиста (опционо)"
+                value={editPlaylistId || ""}
+                onChange={(e) => setEditPlaylistId(e.target.value || null)}
+              >
+                <MenuItem value="">Без музике</MenuItem>
+                {playlists.map((pl) => (
+                  <MenuItem key={pl.id} value={pl.id}>{pl.name}</MenuItem>
+                ))}
+              </TextField>
               <textarea
                 placeholder="Напомена (опционо)"
                 value={editNote}
