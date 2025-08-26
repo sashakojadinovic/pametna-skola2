@@ -33,6 +33,6 @@ Thumbs.db
 coverage/
 
 # === Playlist/Files ===
-backend/uploads
+backend/uploads/tracks/
 merge/
 
