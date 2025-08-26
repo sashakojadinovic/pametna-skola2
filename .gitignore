@@ -9,6 +9,8 @@ backend/dist
 # === Environment variables ===
 frontend/.env*
 backend/.env*
+frontend/.env.production
+backend/.env.production
 
 # === Logs ===
 *.log
