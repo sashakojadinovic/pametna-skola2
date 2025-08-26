@@ -7,8 +7,8 @@ frontend/dist
 backend/dist
 
 # === Environment variables ===
-frontend/.env
-backend/.env
+frontend/.env*
+backend/.env*
 
 # === Logs ===
 *.log
