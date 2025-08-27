@@ -12,7 +12,13 @@ import { initSocket } from './realtime/ws.js';
 import { registerRoutes } from './routes.js';
 import { bellScheduler } from './modules/bell/bell.service.js';
 import { logger } from './utils/logger.js';
+import { initRelaySafeOff } from './modules/bell/bell.gpio.js';
 
+initRelaySafeOff().then(() => {
+  logger.info('[GPIO] initRelaySafeOff: pin set to OFF');
+}).catch((err) => {
+  logger.error('[GPIO] initRelaySafeOff failed:', err);
+});
 
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*'}));
