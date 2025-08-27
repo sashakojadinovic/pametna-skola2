@@ -109,10 +109,11 @@ async function startMusicIfPossible(force = false) {
       if (state.musicActive) return; // safety check
       try {
         const msToNext = msToNextBell();
-        if (msToNext != null && msToNext < 30000 + 5000) {
+        if (msToNext != null && msToNext < (config.musicPreBellMs + config.relayPulseMs)) {
           stopMusic("near_bell");
           return;
         }
+
         startMusicIfPossible(true);
       } catch (e) {
         logger.error("[music] Greška u loopu:", e);
@@ -127,7 +128,7 @@ async function startMusicIfPossible(force = false) {
 
 function stopMusic(reason = "stop") {
   if (state.musicProc) {
-    try { state.musicProc.kill('SIGTERM'); } catch {}
+    try { state.musicProc.kill('SIGTERM'); } catch { }
     state.musicProc = null;
   }
   if (state.musicStartTimer) { clearTimeout(state.musicStartTimer); state.musicStartTimer = null; }
@@ -199,7 +200,8 @@ async function scheduleNext(db, io) {
   logger.info(`Next bell at ${next.ts.toISO()} (${Math.round(delay / 1000)}s)`);
   io.emit('bell:next', { ts: state.nextRingTs, label: state.nextLabel });
 
-  const preStop = delay - 30000;
+  const preStop = delay - config.musicPreBellMs;
+
   if (preStop > 0) {
     state.musicPreStopTimer = setTimeout(() => stopMusic("pre_bell_30s"), preStop);
   } else {
