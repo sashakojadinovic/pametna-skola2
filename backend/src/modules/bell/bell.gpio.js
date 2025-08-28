@@ -8,10 +8,15 @@ import { config } from '../../config/index.js';
 import { logger } from '../../utils/logger.js';
 import { spawn } from 'child_process';
 
+// ✅ Loguj ako je mock aktiviran
+if (config.mockGpio) {
+  logger.warn('[GPIO] MOCK režim je aktiviran — svi pozivi će biti ignorisani.');
+}
+
 // Waveshare kanali → BCM pinovi
 const CHANNEL_PINS = { CH1: 26, CH2: 20, CH3: 21 };
 const RELAY_CHANNEL = (process.env.RELAY_CHANNEL || 'CH1').toUpperCase();
-const DEFAULT_PIN   = CHANNEL_PINS[RELAY_CHANNEL] ?? CHANNEL_PINS.CH1;
+const DEFAULT_PIN = CHANNEL_PINS[RELAY_CHANNEL] ?? CHANNEL_PINS.CH1;
 
 // Back-compat: ako je RELAY_PIN definisan, on ima prednost
 const RELAY_PIN = Number(process.env.RELAY_PIN || config.relayPin || DEFAULT_PIN);
@@ -21,11 +26,16 @@ function parseActiveLow() {
   return /^(1|true|yes|on)$/i.test(String(process.env.RELAY_ACTIVE_LOW ?? '1'));
 }
 
-const CHIP_NAME   = process.env.GPIO_CHIP  || 'gpiochip0';
+const CHIP_NAME = process.env.GPIO_CHIP || 'gpiochip0';
 const GPIOSET_BIN = process.env.GPIOSET_BIN || '/usr/bin/gpioset';
 const GPIOGET_BIN = process.env.GPIOGET_BIN || '/usr/bin/gpioget';
 
 function execGpioset(chip, pin, value) {
+  if (config.mockGpio) {
+    logger.info(`[GPIO-MOCK] gpioset: chip=${chip}, pin=${pin}, value=${value}`);
+    return Promise.resolve();
+  }
+
   return new Promise((resolve, reject) => {
     const args = ['--mode=exit', chip, `${pin}=${value}`];
     const cmd = spawn(GPIOSET_BIN, args);
@@ -38,10 +48,14 @@ function execGpioset(chip, pin, value) {
 }
 
 function execGpiosetTimed(chip, pin, value, ms) {
+  if (config.mockGpio) {
+    logger.info(`[GPIO-MOCK] gpioset(time): chip=${chip}, pin=${pin}, value=${value}, ms=${ms}`);
+    return Promise.resolve();
+  }
+
   return new Promise((resolve, reject) => {
-    const sec  = Math.floor(ms / 1000);
+    const sec = Math.floor(ms / 1000);
     const usec = (ms % 1000) * 1000;
-    // --mode=time drži liniju na 'value' tačno zadato vreme
     const args = ['--mode=time', `--sec=${sec}`, `--usec=${usec}`, chip, `${pin}=${value}`];
     const cmd = spawn(GPIOSET_BIN, args);
     cmd.on('error', (err) => {
@@ -53,6 +67,11 @@ function execGpiosetTimed(chip, pin, value, ms) {
 }
 
 function execGpioget(chip, pin) {
+  if (config.mockGpio) {
+    logger.info(`[GPIO-MOCK] gpioget: chip=${chip}, pin=${pin} → vraća 0`);
+    return Promise.resolve(0);
+  }
+
   return new Promise((resolve, reject) => {
     const cmd = spawn(GPIOGET_BIN, [chip, String(pin)]);
     let out = '';
@@ -75,25 +94,21 @@ class GpiosetRelay {
   constructor(pin) {
     this.pin = Number(pin);
     this.activeLow = parseActiveLow();
-    this.ON  = this.activeLow ? 0 : 1;
+    this.ON = this.activeLow ? 0 : 1;
     this.OFF = this.activeLow ? 1 : 0;
 
     logger.info(`[GPIO] init chip=${CHIP_NAME}, pin=${this.pin}, activeLow=${this.activeLow}, channel=${RELAY_CHANNEL}`);
   }
 
-  // ✅ FIKS: koristi time-mode da puls zaista traje RELAY_PULSE_MS
   async pulse(durationMs) {
     const ms = Math.max(50, Number(durationMs) || 0);
     logger.info(`[GPIO] pulse (time-mode) ON=${this.ON} pin=${this.pin} dur=${ms}ms`);
     await execGpiosetTimed(CHIP_NAME, this.pin, this.ON, ms);
-    // posle isteka vremena, gpioset sam otpusti liniju (OFF), nije potreban dodatni poziv
     return true;
   }
 
-  // Debug/helpers (trajni ON/OFF)
-  async on()  { await execGpioset(CHIP_NAME, this.pin, this.ON);  }
+  async on() { await execGpioset(CHIP_NAME, this.pin, this.ON); }
   async off() { await execGpioset(CHIP_NAME, this.pin, this.OFF); }
-
   async read() { return await execGpioget(CHIP_NAME, this.pin); }
 }
 
@@ -104,7 +119,6 @@ export function getRelay() {
   return relayInstance;
 }
 
-// Garantuj OFF na startu aplikacije
 export async function initRelaySafeOff() {
   try {
     const activeLow = parseActiveLow();
@@ -116,5 +130,4 @@ export async function initRelaySafeOff() {
   }
 }
 
-// za debug/test
 export const _debug = { RELAY_PIN, CHIP_NAME, RELAY_CHANNEL, GPIOSET_BIN };
