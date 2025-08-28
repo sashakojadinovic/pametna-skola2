@@ -47,25 +47,6 @@ function execGpioset(chip, pin, value) {
   });
 }
 
-function execGpiosetTimed(chip, pin, value, ms) {
-  if (config.mockGpio) {
-    logger.info(`[GPIO-MOCK] gpioset(time): chip=${chip}, pin=${pin}, value=${value}, ms=${ms}`);
-    return Promise.resolve();
-  }
-
-  return new Promise((resolve, reject) => {
-    const sec = Math.floor(ms / 1000);
-    const usec = (ms % 1000) * 1000;
-    const args = ['--mode=time', `--sec=${sec}`, `--usec=${usec}`, chip, `${pin}=${value}`];
-    const cmd = spawn(GPIOSET_BIN, args);
-    cmd.on('error', (err) => {
-      logger.error('[GPIO] gpioset(time) error', err);
-      reject(err);
-    });
-    cmd.on('exit', (code) => code === 0 ? resolve() : reject(new Error(`gpioset(time) exit ${code}`)));
-  });
-}
-
 function execGpioget(chip, pin) {
   if (config.mockGpio) {
     logger.info(`[GPIO-MOCK] gpioget: chip=${chip}, pin=${pin} → vraća 0`);
@@ -102,8 +83,14 @@ class GpiosetRelay {
 
   async pulse(durationMs) {
     const ms = Math.max(50, Number(durationMs) || 0);
-    logger.info(`[GPIO] pulse (time-mode) ON=${this.ON} pin=${this.pin} dur=${ms}ms`);
-    await execGpiosetTimed(CHIP_NAME, this.pin, this.ON, ms);
+    logger.info(`[GPIO] pulse ON=${this.ON} pin=${this.pin} dur=${ms}ms`);
+    try {
+      await execGpioset(CHIP_NAME, this.pin, this.ON);   // uključi
+      await sleep(ms);                                   // čekaj trajanje
+    } finally {
+      await execGpioset(CHIP_NAME, this.pin, this.OFF);  // isključi
+      logger.info(`[GPIO] pulse OFF=${this.OFF} pin=${this.pin}`);
+    }
     return true;
   }
 
