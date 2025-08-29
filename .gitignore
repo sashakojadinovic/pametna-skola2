@@ -38,3 +38,5 @@ coverage/
 backend/uploads/tracks/
 merge/
 
+# === DB ===
+backend/data/
