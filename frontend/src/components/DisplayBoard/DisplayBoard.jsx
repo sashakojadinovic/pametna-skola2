@@ -226,7 +226,7 @@ export default function DisplayBoard() {
                   : current?.type || "Ван распореда"
               }
               color={current?.type === "ЧАС" ? "error" : "success"}
-              sx={{ fontSize: "clamp(14px, 2vw, 24px)", px: 2.5, py: 2, borderRadius: 3 }}
+              sx={{ fontSize: "clamp(16px, 3vw, 36px)", px: 3, py: 3, borderRadius: 3 }}
             />
             <MiddleCircle nowTick={nowTick} current={current} />
             <Typography sx={{ fontSize: "clamp(16px, 2vw, 24px)" }}>

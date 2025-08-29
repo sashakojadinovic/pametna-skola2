@@ -5,8 +5,7 @@ sudo ip -s -s neigh flush all
 sudo systemctl restart systemd-resolved
 sudo systemctl restart NetworkManager
 
-//na novijim sistemima //radi na PI5
-resolvectl status
-sudo resolvectl flush-caches  //
-resolvectl statistics
+sudo resolvectl status
+sudo resolvectl flush-caches  
+sudo resolvectl statistics
 

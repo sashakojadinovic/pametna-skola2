@@ -48,7 +48,7 @@ export default function CarouselAnnouncementBoard({ items = [], override = null 
   if (!items.length && !override) return null;
 
   return (
-    <Box sx={{ mb: 3, minHeight: 220}}>
+    <Box sx={{ mb: 3, minHeight: 220 }}>
       {/* Push obaveštenje (override) — prikazuje se samo dok roditelj prosleđuje prop */}
       <Fade in={Boolean(override)} mountOnEnter unmountOnExit>
         <Alert
@@ -75,7 +75,7 @@ export default function CarouselAnnouncementBoard({ items = [], override = null 
                 borderTop: `6px solid`,
                 borderColor: `${priorityColor[visibleItem.priority] || "info"}.main`,
                 minHeight: 180,
-                backgroundColor: "#efefef" 
+                backgroundColor: "#efefef"
               }}
             >
               <CardContent>
@@ -84,6 +84,11 @@ export default function CarouselAnnouncementBoard({ items = [], override = null 
                 </Typography>
                 {visibleItem.body && (
                   <Typography
+                    sx={{
+                      mb: 2,
+                      fontSize: 30,
+
+                    }}
                     variant="body1"
                     component="div"
                     dangerouslySetInnerHTML={{
