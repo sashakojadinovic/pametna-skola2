@@ -51,7 +51,7 @@ function TopBar({ nowTick, connected, onSoftRefresh }) {
       direction="row"
       alignItems="center"
       justifyContent="space-between"
-      sx={{ px: 3, py: 1.5, minHeight: 72 }}
+      sx={{ backgroundColor: "#333", color: "#fff", px: 3, py: 1.5, minHeight: 72 }}
     >
       <Stack direction="row" alignItems="baseline" spacing={2}>
         <Typography
@@ -85,7 +85,7 @@ function TopBar({ nowTick, connected, onSoftRefresh }) {
         <Tooltip title={connected ? "Онлајн (Админ)" : "Нема везе (Админ)"}>
           <IconButton component={Link} to="/admin" size="large">
             {connected ? (
-              <CloudDoneIcon fontSize="large" />
+              <CloudDoneIcon sx={{color:"#dedede"}} fontSize="large" />
             ) : (
               <CloudOffIcon color="error" fontSize="large" />
             )}
@@ -95,7 +95,7 @@ function TopBar({ nowTick, connected, onSoftRefresh }) {
         {/* Refresh ostaje isto */}
         <Tooltip title="Освежи податке">
           <IconButton onClick={onSoftRefresh} size="large">
-            <RefreshIcon />
+            <RefreshIcon sx={{color:"#dedede"}} />
           </IconButton>
         </Tooltip>
       </Stack>
