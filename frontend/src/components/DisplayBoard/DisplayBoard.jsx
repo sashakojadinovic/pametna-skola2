@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { io } from "socket.io-client";
 import {
   Box,
@@ -46,22 +47,52 @@ function TopBar({ nowTick, connected, onSoftRefresh }) {
     "Субота",
   ];
   return (
-    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 3, py: 1.5, minHeight: 72 }}>
+    <Stack
+      direction="row"
+      alignItems="center"
+      justifyContent="space-between"
+      sx={{ px: 3, py: 1.5, minHeight: 72 }}
+    >
       <Stack direction="row" alignItems="baseline" spacing={2}>
-        <Typography component="div" sx={{ fontWeight: 800, lineHeight: 1, fontSize: "clamp(28px, 5vw, 64px)" }}>
+        <Typography
+          component="div"
+          sx={{
+            fontWeight: 800,
+            lineHeight: 1,
+            fontSize: "clamp(28px, 5vw, 64px)",
+          }}
+        >
           {hh}:{mm}
-          <Typography component="span" sx={{ fontSize: "0.5em", ml: 1, opacity: 0.7 }}>{ss}</Typography>
+          <Typography
+            component="span"
+            sx={{ fontSize: "0.5em", ml: 1, opacity: 0.7 }}
+          >
+            {ss}
+          </Typography>
         </Typography>
-        <Typography component="div" sx={{ fontSize: "clamp(14px, 1.6vw, 22px)", opacity: 0.8 }}>
+        <Typography
+          component="div"
+          sx={{ fontSize: "clamp(14px, 1.6vw, 22px)", opacity: 0.8 }}
+        >
           {days[d.getDay()]} · {String(d.getDate()).padStart(2, "0")}.
           {String(d.getMonth() + 1).padStart(2, "0")}.
           {d.getFullYear()}.
         </Typography>
       </Stack>
+
       <Stack direction="row" alignItems="center" spacing={1.5}>
-        <Tooltip title={connected ? "Онлајн" : "Нема везе"}>
-          <Box>{connected ? <CloudDoneIcon fontSize="large" /> : <CloudOffIcon color="error" fontSize="large" />}</Box>
+        {/* Online/offline sada je link ka /admin */}
+        <Tooltip title={connected ? "Онлајн (Админ)" : "Нема везе (Админ)"}>
+          <IconButton component={Link} to="/admin" size="large">
+            {connected ? (
+              <CloudDoneIcon fontSize="large" />
+            ) : (
+              <CloudOffIcon color="error" fontSize="large" />
+            )}
+          </IconButton>
         </Tooltip>
+
+        {/* Refresh ostaje isto */}
         <Tooltip title="Освежи податке">
           <IconButton onClick={onSoftRefresh} size="large">
             <RefreshIcon />

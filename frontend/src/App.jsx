@@ -18,12 +18,12 @@ export default function App() {
       <CssBaseline />
 
         {/* <AppBar sx={{display: displayValue}}  position="static"> */}
-        <AppBar sx={{display: 'block'}}  position="static">
+{/*         <AppBar sx={{display: 'block'}}  position="static">
           <Toolbar >
             <Button color="inherit" component={Link} to="/">Огласни монитор</Button>
             <Button color="inherit" component={Link} to="/admin">Админ</Button>
           </Toolbar>
-        </AppBar>
+        </AppBar> */}
         <Container maxWidth={false}>
           <Routes>
             <Route path="/" element={<MonitorPage />} />
