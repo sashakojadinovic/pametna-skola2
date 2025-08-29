@@ -16,19 +16,21 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// ✅ Pusti jednokratni zvuk zvona/obaveštenja
 function playBellSound(filePath) {
   const fullPath = path.resolve(filePath);
-  const child = spawn("ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet", fullPath], {
+  const child = spawn('ffplay', ['-nodisp', '-autoexit', '-loglevel', 'quiet', fullPath], {
     detached: true,
-    stdio: "ignore",
+    stdio: 'ignore',
   });
   child.unref();
 }
 
+// ✅ Pusti muziku (vraća child proces)
 function spawnMusic(filePath) {
   const fullPath = path.resolve(filePath);
-  return spawn("ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet", fullPath], {
-    stdio: "ignore",
+  return spawn('ffplay', ['-nodisp', '-autoexit', '-loglevel', 'quiet', fullPath], {
+    stdio: 'ignore',
   });
 }
 
@@ -51,6 +53,8 @@ const state = {
   shuffledTrackList: [],
   shuffledIndex: 0,
   orderedIndex: 0,
+  // 🔽 novo: određuje da li posle SLEDEĆEG zvona smemo da pustimo muziku
+  allowMusicAfterNextBell: true,
 };
 
 async function resolveTodayPlaylistId(db) {
@@ -81,7 +85,10 @@ async function startMusicIfPossible(force = false) {
     }
     if (!state.playlistIdToday) return;
 
-    const tracks = await state.db.all(`SELECT id, file_path FROM tracks WHERE playlist_id = ? ORDER BY order_index ASC`, [state.playlistIdToday]);
+    const tracks = await state.db.all(
+      `SELECT id, file_path FROM tracks WHERE playlist_id = ? ORDER BY order_index ASC`,
+      [state.playlistIdToday]
+    );
     if (!Array.isArray(tracks) || tracks.length === 0) return;
 
     let pick = null;
@@ -93,7 +100,7 @@ async function startMusicIfPossible(force = false) {
       if (!state.shuffledTrackList?.length) {
         state.shuffledTrackList = shuffleArray(tracks);
         state.shuffledIndex = 0;
-        console.log('[music] SHUFFLE REDOSLED:', state.shuffledTrackList.map(t => t.file_path));
+        console.log('[music] SHUFFLE REDOSLED:', state.shuffledTrackList.map((t) => t.file_path));
       }
       pick = state.shuffledTrackList[state.shuffledIndex];
       state.shuffledIndex = (state.shuffledIndex + 1) % state.shuffledTrackList.length;
@@ -109,30 +116,54 @@ async function startMusicIfPossible(force = false) {
       if (state.musicActive) return; // safety check
       try {
         const msToNext = msToNextBell();
-        if (msToNext != null && msToNext < (config.musicPreBellMs + config.relayPulseMs)) {
-          stopMusic("near_bell");
+        // Ako je sledeće zvono vrlo blizu, nemoj dalje da vrtiš
+        if (msToNext != null && msToNext < config.musicPreBellMs + config.relayPulseMs) {
+          stopMusic('near_bell');
           return;
         }
-
         startMusicIfPossible(true);
       } catch (e) {
-        logger.error("[music] Greška u loopu:", e);
-        stopMusic("error_loop");
+        logger.error('[music] Greška u loopu:', e);
+        stopMusic('error_loop');
       }
     });
   } catch (e) {
-    logger.error("[music] Greška pri startu:", e);
-    stopMusic("error_start");
+    logger.error('[music] Greška pri startu:', e);
+    stopMusic('error_start');
   }
 }
 
-function stopMusic(reason = "stop") {
-  if (state.musicProc) {
-    try { state.musicProc.kill('SIGTERM'); } catch { }
-    state.musicProc = null;
+function stopMusic(reason = 'stop') {
+  const proc = state.musicProc;
+  state.musicProc = null;
+
+  if (state.musicStartTimer) {
+    clearTimeout(state.musicStartTimer);
+    state.musicStartTimer = null;
   }
-  if (state.musicStartTimer) { clearTimeout(state.musicStartTimer); state.musicStartTimer = null; }
-  if (state.musicPreStopTimer) { clearTimeout(state.musicPreStopTimer); state.musicPreStopTimer = null; }
+  if (state.musicPreStopTimer) {
+    clearTimeout(state.musicPreStopTimer);
+    state.musicPreStopTimer = null;
+  }
+
+  if (proc) {
+    try {
+      proc.kill('SIGTERM');
+    } catch {}
+    // Fallback: ako ffplay ne ugasi na SIGTERM, pokušaj SIGKILL nakon kratkog odlaganja
+    setTimeout(() => {
+      try {
+        // Ako je proces živ, kill('0') neće baciti izuzetak
+        proc.kill(0);
+        try {
+          proc.kill('SIGKILL');
+        } catch {}
+      } catch {
+        // već je ugašen
+      }
+    }, 400);
+  }
+
   if (state.musicActive) logger.info(`[music] STOP (${reason})`);
   state.musicActive = false;
 }
@@ -156,38 +187,87 @@ async function fetchTodayTemplate(db) {
   return row;
 }
 
+// 🔽 Prošireno: pored ts/label, vraćamo i politiku muzike po ringu
 function computeTodayRings(json_spec) {
   if (!json_spec) return [];
   let spec;
-  try { spec = JSON.parse(json_spec); } catch { return []; }
+  try {
+    spec = JSON.parse(json_spec);
+  } catch {
+    return [];
+  }
   const rings = Array.isArray(spec.rings) ? spec.rings : [];
-  const list = rings.map((r) => ({
-    ts: parseTimeToday(config.tz, r.time),
-    label: r.label || ''
-  }));
-  return list.filter(x => x.ts > nowTZ(config.tz)).sort((a, b) => a.ts - b.ts);
+
+  const list = rings.map((r) => {
+    const label = r.label || '';
+    const ll = label.toLowerCase();
+
+    const has = (w) => ll.includes(w);
+    const any = (...arr) => arr.some(has);
+
+    // ✅ Eksplicitna podešavanja iz JSON-a imaju prioritet
+    const explicitMusicAfter = r.music_after;
+    const explicitStopBefore = r.stop_music_before;
+
+    // ✅ Heuristike koje pokrivaju i latinicu i ćirilicu
+    const isStartOfClassHeur =
+      any('početak', 'pocetak', 'почетак') && any('čas', 'cas', 'час');
+
+    const isBreakHeur =
+      any('odmor', 'одмор') || // odmor
+      (any('kraj', 'крај') && any('čas', 'cas', 'час')); // kraj časa
+
+    // 🎯 Finalna odluka
+    const musicAfter =
+      explicitMusicAfter !== undefined
+        ? !!explicitMusicAfter
+        : isStartOfClassHeur
+        ? false
+        : isBreakHeur
+        ? true
+        : true; // default: pusti muziku posle ostalih zvona
+
+    const stopBefore = explicitStopBefore !== undefined ? !!explicitStopBefore : true;
+
+    return {
+      ts: parseTimeToday(config.tz, r.time),
+      label,
+      music_after: musicAfter,
+      stop_music_before: stopBefore,
+    };
+  });
+
+  return list
+    .filter((x) => x.ts > nowTZ(config.tz))
+    .sort((a, b) => a.ts - b.ts);
 }
 
 async function scheduleNext(db, io) {
   clearTimeout(state.timer);
-  if (state.musicPreStopTimer) { clearTimeout(state.musicPreStopTimer); state.musicPreStopTimer = null; }
+  if (state.musicPreStopTimer) {
+    clearTimeout(state.musicPreStopTimer);
+    state.musicPreStopTimer = null;
+  }
   state.timer = null;
 
   const today = await fetchTodayTemplate(db);
   if (!today || today.is_holiday) {
-    state.nextRingTs = null; state.nextLabel = null;
-    stopMusic("holiday_or_no_schedule");
+    state.nextRingTs = null;
+    state.nextLabel = null;
+    stopMusic('holiday_or_no_schedule');
     io.emit('bell:next', null);
     return;
   }
 
   state.playlistIdToday = await resolveTodayPlaylistId(db);
-  state.shuffledTrackList = []; state.shuffledIndex = 0;
+  state.shuffledTrackList = [];
+  state.shuffledIndex = 0;
 
   const upcoming = computeTodayRings(today.json_spec);
   if (upcoming.length === 0) {
-    state.nextRingTs = null; state.nextLabel = null;
-    stopMusic("no_more_bells");
+    state.nextRingTs = null;
+    state.nextLabel = null;
+    stopMusic('no_more_bells');
     io.emit('bell:next', null);
     return;
   }
@@ -195,26 +275,37 @@ async function scheduleNext(db, io) {
   const next = upcoming[0];
   state.nextRingTs = next.ts.toISO();
   state.nextLabel = next.label;
+  state.allowMusicAfterNextBell = next.music_after !== false; // ⬅️ zapamti odluku
+
   const delay = Math.max(0, next.ts.toMillis() - DateTime.now().setZone(config.tz).toMillis());
 
-  logger.info(`Next bell at ${next.ts.toISO()} (${Math.round(delay / 1000)}s)`);
+  logger.info(
+    `Next bell at ${next.ts.toISO()} (${Math.round(delay / 1000)}s) — label="${next.label}" — stop_before=${next.stop_music_before} — music_after=${next.music_after}`
+  );
   io.emit('bell:next', { ts: state.nextRingTs, label: state.nextLabel });
 
   const preStop = delay - config.musicPreBellMs;
 
-  if (preStop > 0) {
-    state.musicPreStopTimer = setTimeout(() => stopMusic("pre_bell_30s"), preStop);
-  } else {
-    stopMusic("pre_bell_immediate");
+  // 🔽 prekid muzike pre zvona samo ako je uključeno za ovaj ring
+  if (next.stop_music_before !== false) {
+    if (preStop > 0) {
+      state.musicPreStopTimer = setTimeout(() => stopMusic('pre_bell'), preStop);
+    } else {
+      stopMusic('pre_bell_immediate');
+    }
   }
 
+  // 🔽 glavni tajmer za okidanje zvona
   state.timer = setTimeout(async () => {
-    stopMusic("bell_incoming");
+    stopMusic('bell_incoming');
     await triggerBell(db, io, config.relayPulseMs, 'SCHEDULE');
 
-    state.musicStartTimer = setTimeout(() => {
-      startMusicIfPossible();
-    }, config.musicPostBellDelayMs);
+    // 🔽 muzika posle zvona samo ako je dozvoljeno za ovaj ring
+    if (state.allowMusicAfterNextBell) {
+      state.musicStartTimer = setTimeout(() => {
+        startMusicIfPossible();
+      }, config.musicPostBellDelayMs);
+    }
 
     scheduleNext(db, io);
   }, delay);
@@ -233,7 +324,7 @@ export async function triggerBell(db, io, durationMs, source = 'MANUAL') {
     io.emit('bell:triggered', { ts: new Date().toISOString(), durationMs });
     logger.info(`Bell TRIGGER OK (${durationMs}ms)`);
 
-    const audioFile = path.join(__dirname, "../../audio/bell-oldschool.mp3");
+    const audioFile = path.join(__dirname, '../../audio/bell-oldschool.mp3');
     if (config.enableAudioBackend) {
       playBellSound(audioFile);
     }
@@ -251,7 +342,8 @@ export async function triggerBell(db, io, durationMs, source = 'MANUAL') {
 
 export const bellScheduler = {
   async init({ db, io }) {
-    state.db = db; state.io = io;
+    state.db = db;
+    state.io = io;
     await scheduleNext(db, io);
   },
   async rehydrate() {
@@ -259,11 +351,11 @@ export const bellScheduler = {
   },
   getNext() {
     return state.nextRingTs ? { ts: state.nextRingTs, label: state.nextLabel } : null;
-  }
+  },
 };
 
 export function playNotificationSound() {
   if (!config.enableAudioBackend) return;
-  const audioFile = path.join(__dirname, "../../audio/alert-gentle.mp3");
+  const audioFile = path.join(__dirname, '../../audio/alert-gentle.mp3');
   playBellSound(audioFile);
 }
